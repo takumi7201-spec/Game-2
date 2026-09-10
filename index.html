@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fossil Hunters</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#05070c; overflow:hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color:#dfe7f5; }
+  #c { display:block; width:100%; height:100%; }
+  .ui { position:fixed; pointer-events:none; user-select:none; }
+  #hud { top:14px; left:14px; display:flex; flex-direction:column; gap:8px; }
+  .panel { background:linear-gradient(180deg, rgba(10,16,26,.82), rgba(8,12,20,.72));
+    border:1px solid rgba(120,190,255,.22); border-left:3px solid #59f0ff;
+    padding:9px 13px; border-radius:3px; backdrop-filter: blur(7px);
+    box-shadow: 0 6px 22px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05); }
+  .title { font-size:13px; letter-spacing:.22em; color:#8fe6ff; text-shadow:0 0 12px rgba(89,240,255,.55); }
+  .sub { font-size:10px; letter-spacing:.14em; color:#7d8ba3; margin-top:3px; }
+  .row { display:flex; align-items:center; gap:9px; font-size:12px; }
+  .k { color:#7d8ba3; letter-spacing:.1em; font-size:10px; }
+  .v { color:#ffd98a; font-size:15px; text-shadow:0 0 10px rgba(255,190,80,.4); }
+  #roster { display:flex; flex-direction:column; gap:5px; font-size:11px; }
+  .dino { display:flex; gap:7px; align-items:center; }
+  .swatch { width:9px; height:9px; border-radius:2px; box-shadow:0 0 7px currentColor; }
+  #hint { bottom:16px; left:50%; transform:translateX(-50%); text-align:center; }
+  #hint .big { font-size:13px; color:#ffe9b0; letter-spacing:.1em; }
+  #keys { bottom:14px; right:14px; text-align:right; font-size:10px; line-height:1.75;
+    color:#78889f; letter-spacing:.09em; }
+  #keys b { color:#a9d8ff; font-weight:600; }
+  #perf { top:14px; right:14px; font-size:11px; color:#7fe0a0; letter-spacing:.1em; }
+  #bars { top:50%; left:50%; transform:translate(-50%,-50%); width:min(560px,72vw); display:none; }
+  .hp { margin-bottom:10px; }
+  .hpname { font-size:11px; letter-spacing:.16em; margin-bottom:3px; display:flex; justify-content:space-between; }
+  .hpbg { height:9px; background:rgba(0,0,0,.6); border:1px solid rgba(140,200,255,.25); border-radius:2px; overflow:hidden; }
+  .hpfill { height:100%; width:100%; transition:width .25s ease; }
+  #toast { top:22%; left:50%; transform:translateX(-50%); font-size:22px; letter-spacing:.24em;
+    color:#fff; text-shadow:0 0 24px rgba(120,220,255,.9), 0 2px 10px #000; opacity:0; transition:opacity .3s; }
+  #vig { inset:0; box-shadow: inset 0 0 200px rgba(0,0,0,.42); }
+  #load { inset:0; display:flex; align-items:center; justify-content:center; background:#05070c;
+    font-size:12px; letter-spacing:.3em; color:#59f0ff; pointer-events:all; }
+  @media (max-width: 620px) {
+    #hud { top:10px; left:10px; gap:6px; }
+    .panel { padding:7px 10px; }
+    .title { font-size:11px; }
+    .sub { font-size:9px; }
+    .row { gap:6px; }
+    .v { font-size:13px; }
+    #keys { display:none; }
+    #perf { top:10px; right:10px; font-size:10px; }
+    #hint .big { font-size:11px; }
+    #toast { font-size:16px; letter-spacing:.16em; }
+    #bars { width:84vw; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui" id="vig"></div>
+<div class="ui" id="hud">
+  <div class="panel">
+    <div class="title">FOSSIL HUNTERS</div>
+    <div class="sub">RUINS OF THE DROWNED BASIN — 化石発掘場</div>
+  </div>
+  <div class="panel">
+    <div class="row"><span class="k">FOSSILS</span><span class="v" id="fossils">0</span>
+      <span class="k">SHARDS</span><span class="v" id="shards">0</span>
+      <span class="k">SITES</span><span class="v" id="sites">0</span></div>
+    <div class="sub" id="progress">発掘地点を掘って化石をあつめよう</div>
+    <div class="sub" style="color:#ffc27a">オレンジの光の柱＝未発掘。足元の矢印が最寄りを指す</div>
+  </div>
+  <div class="panel" id="rosterPanel" style="display:none">
+    <div class="k" style="margin-bottom:5px">REVIVED</div>
+    <div id="roster"></div>
+  </div>
+</div>
+<div class="ui" id="perf">-- FPS</div>
+<div class="ui" id="bars">
+  <div class="hp"><div class="hpname"><span id="n1">YOUR DINO</span><span id="v1">100</span></div>
+    <div class="hpbg"><div class="hpfill" id="f1" style="background:linear-gradient(90deg,#59f0ff,#8affc8)"></div></div></div>
+  <div class="hp"><div class="hpname"><span id="n2">WILD MONSTER</span><span id="v2">100</span></div>
+    <div class="hpbg"><div class="hpfill" id="f2" style="background:linear-gradient(90deg,#ff6a3c,#ffd24a)"></div></div></div>
+</div>
+<div class="ui" id="toast"></div>
+<div class="ui" id="hint"><span class="big" id="hintText">クリックで移動 · 旗のある発掘地点をクリックして採掘</span></div>
+<div class="ui" id="keys">
+  <b>CLICK</b> 移動 / 採掘<br>
+  <b>DRAG</b> カメラ回転<br>
+  <b>SCROLL</b> / ピンチ ズーム<br>
+  <b>SPACE</b> 復活 (祭壇で)<br>
+  <b>F</b> 攻撃指示
+</div>
+<div class="ui" id="load">LOADING…</div>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
