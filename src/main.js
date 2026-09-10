@@ -48,9 +48,10 @@ const rig = createCameraRig(canvas);
  *  Light                                                              *
  * ------------------------------------------------------------------ */
 
-// Deliberately off-axis from the default camera azimuth so cast shadows are
-// visible instead of hiding directly behind every object.
-const sunDir = new THREE.Vector3(-0.46, 0.74, -0.52).normalize();
+// Roughly 55 degrees off the default camera azimuth: far enough that cast
+// shadows are not hidden behind their casters, close enough that the digger's
+// face is lit while they are facing the camera.
+const sunDir = new THREE.Vector3(-0.12, 0.72, 0.68).normalize();
 const sun = new THREE.DirectionalLight(0xfff2d8, 3.3);
 sun.position.copy(sunDir).multiplyScalar(60);
 sun.castShadow = true;

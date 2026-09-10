@@ -8,16 +8,17 @@ const SKIN = 0xf6c9a0, SKIN_D = 0xe0aa82;
 const COAT = 0x3f7fd4, COAT_D = 0x2f63aa, TRIM = 0xffd15c;
 const PANTS = 0x4d5673, BOOT = 0x7a4f2c, GLOVE = 0xd08347;
 const CAP = 0xe2564a, CAP_D = 0xb63f36;
-const HAIR = 0x53331f, SCARF = 0xf2e7cf;
+const HAIR = 0x63401f, HAIR_D = 0x4a2e15, SCARF = 0xf2e7cf;
+const BROW = 0x4a2e15, BLUSH = 0xef9d8a, IRIS = 0x3f6ea8, INK = 0x27303f;
 const PACK = 0x8a5a34, STEEL = 0xb9c6d4;
 
-function part(build) {
+function part(build, outline = 0.019) {
   const b = new VoxelBuilder();
   build(b);
   const m = new THREE.Mesh(b.build(), toonMaterial({ vertexColors: true }));
   m.castShadow = true;
   m.receiveShadow = false;
-  addOutline(m, 0.019);
+  if (outline > 0) addOutline(m, outline);
   return m;
 }
 
@@ -60,30 +61,60 @@ export function createCharacter(scene) {
   hips.add(neck);
 
   const head = part((b) => {
-    b.box(0, 0.3, 0, 0.58, 0.54, 0.54, SKIN);
-    b.box(0, 0.12, -0.28, 0.5, 0.3, 0.06, HAIR);        // nape
-    b.box(0, 0.5, 0, 0.6, 0.16, 0.56, HAIR);
-    b.box(0, 0.62, 0, 0.64, 0.14, 0.6, CAP);            // cap
-    b.box(0, 0.7, -0.02, 0.5, 0.08, 0.5, CAP_D);
-    b.box(0, 0.56, 0.3, 0.5, 0.08, 0.24, CAP_D);        // brim
-    b.box(0, 0.62, -0.3, 0.16, 0.1, 0.1, CAP_D);
-    b.box(0, 0.58, 0, 0.66, 0.14, 0.62, 0x3f4654);      // goggle strap, worn on the cap
-    b.box(0.17, 0.58, 0.31, 0.22, 0.2, 0.06, 0x8fe8ff); // lenses
-    b.box(-0.17, 0.58, 0.31, 0.22, 0.2, 0.06, 0x8fe8ff);
-    b.box(0.17, 0.58, 0.34, 0.26, 0.24, 0.02, 0x5f6b7c);
-    b.box(-0.17, 0.58, 0.34, 0.26, 0.24, 0.02, 0x5f6b7c);
-    b.box(0, 0.42, 0.28, 0.3, 0.1, 0.05, HAIR);         // fringe
-    b.box(0, 0.18, 0.29, 0.12, 0.08, 0.04, SKIN_D);     // nose
-    b.box(0.1, 0.1, 0.28, 0.16, 0.05, 0.03, 0xd4826a);  // mouth
+    // rounded cranium with a narrower jaw and a small chin: reads young
+    b.box(0, 0.36, 0, 0.6, 0.44, 0.56, SKIN);
+    b.box(0, 0.11, 0.01, 0.52, 0.16, 0.54, SKIN, { tint: 0.99 });
+    b.box(0, 0.02, 0.02, 0.36, 0.1, 0.44, SKIN, { tint: 0.98 });
+    b.box(0, 0.16, -0.28, 0.52, 0.36, 0.06, HAIR);       // nape
+
+    // hair: fringe chunks and side tufts escaping from under the cap
+    b.box(0, 0.53, 0, 0.62, 0.14, 0.58, HAIR);
+    b.box(-0.13, 0.45, 0.3, 0.22, 0.15, 0.05, HAIR);
+    b.box(0.11, 0.47, 0.3, 0.17, 0.11, 0.05, HAIR_D);
+    b.box(0.24, 0.46, 0.3, 0.1, 0.08, 0.05, HAIR);
+    b.box(0.29, 0.42, 0.2, 0.07, 0.16, 0.2, HAIR);       // sideburns
+    b.box(-0.29, 0.42, 0.2, 0.07, 0.16, 0.2, HAIR);
+    b.box(0.18, 0.5, -0.3, 0.14, 0.13, 0.09, HAIR_D);    // tufts at the back
+    b.box(-0.15, 0.47, -0.31, 0.12, 0.11, 0.08, HAIR);
+
+    // cap
+    b.box(0, 0.63, 0, 0.64, 0.14, 0.6, CAP);
+    b.box(0, 0.71, -0.02, 0.5, 0.08, 0.5, CAP_D);
+    b.box(0, 0.57, 0.31, 0.5, 0.08, 0.24, CAP_D);        // brim
+    b.box(0, 0.63, -0.31, 0.16, 0.1, 0.1, CAP_D);
+
+    // goggles pushed up onto the cap
+    b.box(0, 0.59, 0, 0.66, 0.14, 0.62, 0x3f4654);
+    b.box(0.17, 0.59, 0.32, 0.22, 0.2, 0.06, 0x8fe8ff);
+    b.box(-0.17, 0.59, 0.32, 0.22, 0.2, 0.06, 0x8fe8ff);
+    b.box(0.17, 0.59, 0.35, 0.26, 0.24, 0.02, 0x5f6b7c);
+    b.box(-0.17, 0.59, 0.35, 0.26, 0.24, 0.02, 0x5f6b7c);
+
+    // brows, nose, a small lopsided grin, and a bit of colour on the cheeks
+    b.box(0.15, 0.395, 0.283, 0.17, 0.05, 0.02, BROW);
+    b.box(-0.15, 0.405, 0.283, 0.17, 0.05, 0.02, BROW);
+    b.box(0, 0.2, 0.293, 0.09, 0.07, 0.035, SKIN_D);
+    b.box(0.01, 0.1, 0.278, 0.11, 0.04, 0.015, 0xb5645a);
+    b.box(0.08, 0.125, 0.278, 0.05, 0.035, 0.015, 0xb5645a);
+    b.box(-0.06, 0.12, 0.278, 0.04, 0.03, 0.015, 0xb5645a);
+    b.box(0.235, 0.19, 0.26, 0.1, 0.07, 0.06, BLUSH);
+    b.box(-0.235, 0.19, 0.26, 0.1, 0.07, 0.06, BLUSH);
   });
   neck.add(head);
 
+  // Big anime eyes, built around their own centre so the blink squashes in
+  // place. Thin outlines keep them from turning into black blobs.
   const eyes = part((b) => {
-    b.box(0.14, 0.28, 0.28, 0.11, 0.15, 0.03, 0x2b2f3a);
-    b.box(-0.14, 0.28, 0.28, 0.11, 0.15, 0.03, 0x2b2f3a);
-    b.box(0.17, 0.31, 0.3, 0.04, 0.06, 0.02, 0xffffff);
-    b.box(-0.11, 0.31, 0.3, 0.04, 0.06, 0.02, 0xffffff);
-  });
+    for (const s of [-1, 1]) {
+      b.box(s * 0.145, 0, 0.281, 0.2, 0.21, 0.02, 0xfdfdff);          // sclera
+      b.box(s * 0.145, -0.015, 0.284, 0.125, 0.16, 0.02, IRIS);       // iris
+      b.box(s * 0.145, -0.035, 0.287, 0.08, 0.09, 0.02, INK);         // pupil
+      b.box(s * 0.145 + 0.05, 0.055, 0.29, 0.05, 0.055, 0.02, 0xffffff);
+      b.box(s * 0.145 - 0.045, -0.06, 0.29, 0.03, 0.03, 0.02, 0xffffff);
+      b.box(s * 0.145, 0.107, 0.283, 0.21, 0.05, 0.02, INK);          // lash line
+    }
+  }, 0.009);
+  eyes.position.set(0, 0.27, 0);
   neck.add(eyes);
 
   // scarf: collar + three trailing segments that lag behind

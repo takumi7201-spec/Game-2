@@ -23,6 +23,40 @@ function at(b, x, y, z, yaw = 0, scale = 1, pitch = 0, roll = 0) {
   return b.setTransform(_m);
 }
 
+/** A standalone copy of a local frame, so nested parts can compose onto it. */
+function frame(x, y, z, yaw = 0, scale = 1) {
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)),
+    new THREE.Vector3(scale, scale, scale),
+  );
+}
+
+const _rm = new THREE.Matrix4();
+const _rq = new THREE.Quaternion();
+const _rd = new THREE.Vector3();
+const _rc = new THREE.Vector3();
+const _r1 = new THREE.Vector3(1, 1, 1);
+const _UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * A bone segment: a box rotated to lie along a->b inside `base`.
+ * Chaining these with a shrinking width gives smooth tapered rods instead of
+ * a staircase of axis-aligned cubes.
+ */
+function rod(b, base, a, c, w, color, opts = {}, pad = 0.04) {
+  _rd.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
+  const len = _rd.length();
+  if (len < 1e-5) return;
+  _rd.divideScalar(len);
+  _rq.setFromUnitVectors(_UP, _rd);
+  _rc.set((a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2);
+  _rm.compose(_rc, _rq, _r1);
+  _rm.premultiply(base);
+  b.setTransform(_rm);
+  b.box(0, 0, 0, w, len + pad, w, color, opts);
+}
+
 const COL = {
   bone: 0xf3ead2, boneDark: 0xded1b0, boneWarm: 0xfdf7e4,
   wood: 0x8a5a34, woodDark: 0x6d452a, plank: 0xa9743f,
@@ -265,75 +299,110 @@ function signpost(b, x, z, yaw) {
 
 /** The star of the dig: a huge half-buried fossil beast. */
 function fossilBeast(b, rnd, cx, cz, yaw) {
-  const y = CFG.pit.floor + 0.95;
-  at(b, cx, y, cz, yaw, 1.4);
-  const bone = (x, yy, z, w, h, d, tint = 1) =>
-    b.box(x, yy, z, w, h, d, rnd() < 0.25 ? COL.boneWarm : COL.bone,
-      { tint: tint * (0.95 + rnd() * 0.1) });
+  const base = frame(cx, CFG.pit.floor + 0.95, cz, yaw, 1.4);
+  const col = () => (rnd() < 0.22 ? COL.boneWarm : COL.bone);
+  const jit = (t = 1) => ({ tint: t * (0.95 + rnd() * 0.1) });
+  const blk = (x, y, z, w, h, d, c = col(), t = 1) => {
+    b.setTransform(base);
+    b.box(x, y, z, w, h, d, c, jit(t));
+  };
+  const seg = (a, c, w, t = 1, pad) => rod(b, base, a, c, w, col(), jit(t), pad);
 
-  // spine lying along the floor of the trench, humped in the middle
-  const N = 14;
+  // --- spine: a chain of vertebrae lying along the floor of the trench -----
+  const N = 15;
   const pts = [];
   for (let i = 0; i < N; i++) {
-    const t = i / (N - 1);
-    const x = lerp(-4.2, 2.4, t);
-    const yy = -0.2 + Math.sin(t * Math.PI) * 0.55;
-    pts.push([x, yy, Math.sin(t * 1.8) * 0.3]);
+    const u = i / (N - 1);
+    pts.push([
+      lerp(-4.2, 2.4, u),
+      1.05 + Math.sin(u * Math.PI) * 0.4,
+      Math.sin(u * 1.8) * 0.3,
+    ]);
   }
-  pts.forEach(([x, yy, z], i) => {
-    const t = i / (N - 1);
-    const s = lerp(0.62, 0.38, Math.abs(t - 0.35) * 1.3);
-    bone(x, yy, z, s * 0.95, s, s * 0.95);
-    bone(x, yy + s * 0.7, z, s * 0.34, s * 0.7, s * 0.34, 0.97);
-  });
+  for (let i = 0; i < N - 1; i++) {
+    const u = i / (N - 2);
+    const w = lerp(0.6, 0.36, Math.abs(u - 0.3) * 1.2);
+    seg(pts[i], pts[i + 1], w, 1, -0.08);          // negative pad -> visible joints
+    // neural spine, raked back the way real vertebrae are
+    const [x, y, z] = pts[i];
+    seg([x, y + w * 0.4, z], [x - 0.16, y + w * 0.45 + 0.62, z], w * 0.45, 0.97);
+  }
 
-  // rib cage curving up out of the ground - the silhouette that reads as
-  // "there is a monster buried here"
-  for (let i = 2; i < 12; i += 2) {
-    const [x, yy, z] = pts[i];
-    const t = (i - 2) / 9;
-    const arc = 2.0 + Math.sin(t * Math.PI) * 1.0;
-    const span = 0.6 + Math.sin(t * Math.PI) * 0.5;
+  // --- rib cage: the spine rides on top and the ribs bow out and down into
+  //     the dirt, closing back in under the belly the way a real cage does ---
+  for (let i = 1; i < 13; i += 2) {
+    const [x, y, z] = pts[i];
+    const t = (i - 1) / 12;
+    const bell = Math.sin(t * Math.PI * 0.92 + 0.18);
+    const span = 0.95 + bell * 0.75;               // how far the ribs bow out
+    const drop = 1.5 + bell * 0.75;                // how deep the cage goes
+    const thMax = 2.15;                            // >90deg so the tips curl in
     for (const s of [-1, 1]) {
-      const steps = 9;
-      for (let k = 0; k < steps; k++) {
-        const u = k / (steps - 1);
-        const a = u * 1.62;
-        bone(
-          x + Math.sin(u * 1.2) * 0.16,
-          yy + Math.sin(a) * arc,
-          z + s * (1 - Math.cos(a)) * span * 1.75,
-          0.26, 0.3, 0.26, 1 - u * 0.04,
-        );
+      const steps = 12;
+      let prev = [x, y - 0.06, z + s * 0.22];
+      for (let k = 1; k <= steps; k++) {
+        const u = k / steps;
+        const th = u * thMax;
+        const next = [
+          x + Math.sin(u * 1.15) * 0.3,
+          y - (1 - Math.cos(th)) * drop,
+          z + s * Math.sin(th) * span,
+        ];
+        seg(prev, next, lerp(0.34, 0.14, u), 1 - u * 0.05);
+        prev = next;
       }
     }
   }
 
-  // skull, reared up at the head of the spine
-  const sx = 3.6, sy = 0.75, sz = pts[N - 1][2];
-  bone(sx, sy + 0.2, sz, 1.5, 1.05, 1.2);
-  bone(sx + 1.05, sy + 0.05, sz, 1.0, 0.66, 0.86);        // snout
-  bone(sx + 1.62, sy, sz, 0.4, 0.5, 0.62);
-  b.box(sx + 0.3, sy + 0.5, sz + 0.52, 0.4, 0.4, 0.3, 0x2b2f3a);   // eye sockets
-  b.box(sx + 0.3, sy + 0.5, sz - 0.52, 0.4, 0.4, 0.3, 0x2b2f3a);
-  bone(sx + 0.05, sy + 0.85, sz, 1.15, 0.36, 1.3);        // crest
-  bone(sx - 0.25, sy + 1.2, sz, 0.4, 0.55, 0.95);
-  for (let i = 0; i < 5; i++) {                            // teeth
-    const tx = sx + 0.7 + i * 0.24;
-    bone(tx, sy - 0.28, sz + 0.32, 0.16, 0.3, 0.16);
-    bone(tx, sy - 0.28, sz - 0.32, 0.16, 0.3, 0.16);
-  }
-  bone(sx + 0.85, sy - 0.36, sz, 1.5, 0.32, 0.8);          // jaw
-
-  // limbs, half sunk in the clay
+  // --- skull, reared up at the head of the spine ---------------------------
+  const [hx, hy, hz] = pts[N - 1];
+  const sx = hx + 1.2, sy = hy + 0.5, sz = hz;
+  seg([hx, hy, hz], [sx - 0.55, sy - 0.1, sz], 0.44, 0.98);       // neck
+  blk(sx - 0.1, sy + 0.06, sz, 1.25, 0.62, 1.0);                  // braincase
+  blk(sx - 0.2, sy + 0.52, sz, 1.0, 0.36, 0.82);                  // skull roof
+  blk(sx + 0.52, sy + 0.2, sz, 0.85, 0.52, 0.86);                 // brow ridge
+  blk(sx + 1.08, sy + 0.02, sz, 0.78, 0.44, 0.64);                // snout
+  blk(sx + 1.6, sy - 0.06, sz, 0.48, 0.34, 0.48);
+  blk(sx + 1.94, sy - 0.1, sz, 0.28, 0.24, 0.34);                 // nostril tip
   for (const s of [-1, 1]) {
-    bone(0.9, -0.4, s * 1.7, 0.46, 1.0, 0.46);
-    bone(1.1, -0.95, s * 2.25, 1.0, 0.4, 0.4);
-    bone(-2.2, -0.35, s * 1.4, 0.42, 0.85, 0.42);
+    blk(sx + 0.5, sy + 0.24, sz + s * 0.44, 0.4, 0.4, 0.16, 0x24272f);   // eye socket
+    seg([sx + 0.05, sy + 0.02, sz + s * 0.5],
+        [sx + 0.95, sy - 0.12, sz + s * 0.36], 0.17, 0.98);              // cheek arch
+    seg([sx - 0.62, sy - 0.3, sz + s * 0.42],
+        [sx + 1.45, sy - 0.44, sz + s * 0.26], 0.22, 0.97);              // lower jaw
+    seg([sx + 1.45, sy - 0.44, sz + s * 0.26],
+        [sx + 1.85, sy - 0.34, sz], 0.18, 0.97);                         // jaw tip
+    seg([sx - 0.3, sy + 0.72, sz + s * 0.3],
+        [sx - 0.9, sy + 1.35, sz + s * 0.46], 0.24, 0.97);               // horns
   }
-  // tail vanishing into the pit wall
-  bone(-4.6, -0.55, 0.4, 0.7, 0.4, 0.4);
-  bone(-5.3, -0.7, 0.65, 0.55, 0.32, 0.32);
+  for (let i = 0; i < 6; i++) {                                   // teeth
+    const tx = sx + 0.35 + i * 0.28;
+    const tz = 0.46 - i * 0.035;
+    for (const s of [-1, 1]) {
+      seg([tx, sy - 0.16, sz + s * tz], [tx, sy - 0.42, sz + s * tz], 0.13 - i * 0.008, 1, 0);
+    }
+  }
+
+  // --- limbs, half sunk in the clay ---------------------------------------
+  for (const s of [-1, 1]) {
+    seg([0.9, 0.75, s * 1.25], [1.35, -0.55, s * 1.95], 0.4);    // humerus
+    blk(0.9, 0.8, s * 1.2, 0.5, 0.46, 0.5);                      // shoulder knob
+    seg([1.35, -0.55, s * 1.95], [2.05, -0.95, s * 2.3], 0.3);   // forearm
+    for (let f = -1; f <= 1; f++) {
+      seg([2.05, -0.95, s * 2.3], [2.55, -1.05, s * (2.3 + f * 0.35)], 0.16, 1, 0.02);
+    }
+    seg([-1.9, 0.7, s * 1.1], [-2.5, -0.6, s * 1.8], 0.36);      // hind limb
+    blk(-1.9, 0.75, s * 1.05, 0.46, 0.42, 0.46);
+  }
+
+  // --- tail vanishing into the pit wall ------------------------------------
+  let tp = pts[0];
+  for (let i = 1; i <= 5; i++) {
+    const u = i / 5;
+    const nt = [pts[0][0] - u * 2.6, pts[0][1] - u * 1.15, pts[0][2] + Math.sin(u * 2.2) * 0.6];
+    seg(tp, nt, lerp(0.36, 0.14, u), 1, -0.05);
+    tp = nt;
+  }
   b.setTransform(null);
 }
 
@@ -353,21 +422,23 @@ function ammonite(b, rnd, x, y, z, yaw, scale = 1) {
 }
 
 function boneArch(b, rnd, x, z, yaw) {
-  const y = groundAt(x, z);
-  at(b, x, y, z, yaw, 1);
+  const base = frame(x, groundAt(x, z), z, yaw, 1);
+  const col = () => (rnd() < 0.3 ? COL.boneDark : COL.bone);
   for (const s of [-1, 1]) {
-    const steps = 12;
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1);
-      const a = t * Math.PI * 0.52;
-      const px = s * (Math.cos(a) * 3.4 - 0.2);
-      const py = Math.sin(a) * 4.6;
-      b.box(px, py, 0, 0.55 - t * 0.16, 0.62, 0.62, i % 4 === 0 ? COL.boneDark : COL.bone,
-        { tint: 0.94 + rnd() * 0.1 });
+    const steps = 14;
+    let prev = [s * 3.3, 0.1, 0];
+    for (let i = 1; i <= steps; i++) {
+      const u = i / steps;
+      const a = u * Math.PI * 0.52;
+      const next = [s * (Math.cos(a) * 3.4 - 0.2), Math.sin(a) * 4.6, Math.sin(u * 2.2) * 0.25];
+      rod(b, base, prev, next, lerp(0.62, 0.3, u), col(), { tint: 0.94 + rnd() * 0.1 });
+      prev = next;
     }
-    b.box(s * 3.3, 0.35, 0, 1.1, 0.7, 1.1, COL.boneDark);
+    b.setTransform(base);
+    b.box(s * 3.3, 0.35, 0, 1.15, 0.75, 1.15, COL.boneDark, { tint: 0.96 });
   }
-  b.box(0, 4.62, 0, 0.9, 0.5, 0.7, COL.boneWarm);
+  b.setTransform(base);
+  b.box(0, 4.6, 0, 0.85, 0.5, 0.7, COL.boneWarm);
   b.setTransform(null);
 }
 
