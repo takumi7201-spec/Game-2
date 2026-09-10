@@ -121,11 +121,31 @@ const ndc = new THREE.Vector2();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let dragging = false, dragMoved = 0, lastX = 0, lastY = 0;
 
+const touches = new Map();
+let pinchDist = 0;
+
 canvas.addEventListener('pointerdown', (e) => {
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) {                     // second finger starts a pinch
+    dragging = false;
+    const [a, b] = [...touches.values()];
+    pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    return;
+  }
   dragging = true; dragMoved = 0; lastX = e.clientX; lastY = e.clientY;
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', (e) => {
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) {
+    const [a, b] = [...touches.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist > 0 && d > 0) {
+      cam.dist = THREE.MathUtils.clamp(cam.dist * (pinchDist / d), 22, 82);
+    }
+    pinchDist = d;
+    return;
+  }
   if (!dragging) return;
   const dx = e.clientX - lastX, dy = e.clientY - lastY;
   lastX = e.clientX; lastY = e.clientY;
@@ -133,10 +153,17 @@ canvas.addEventListener('pointermove', (e) => {
   cam.yaw -= dx * 0.0055;
   cam.pitch = THREE.MathUtils.clamp(cam.pitch - dy * 0.004, 0.18, 0.95);
 });
-canvas.addEventListener('pointerup', (e) => {
+function endPointer(e) {
+  const wasPinching = touches.size === 2;
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinchDist = 0;
+  if (!dragging || wasPinching) { dragging = false; return; }
   dragging = false;
   if (dragMoved < 6) handleClick(e);
-});
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.style.touchAction = 'none';
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   cam.dist = THREE.MathUtils.clamp(cam.dist * (1 + Math.sign(e.deltaY) * 0.09), 22, 82);
