@@ -8,8 +8,8 @@ const ri = (a, b) => Math.floor(rr(a, b + 1));
 export const ARENA = 16;          // playable radius-ish (square half-extent)
 
 const PAL = {
-  rock: 0x4a4f5c, rockD: 0x33373f, rockL: 0x616877,
-  dirt: 0x53412c, dirtD: 0x3a2c1d, sand: 0x7a6444,
+  rock: 0x565c6b, rockD: 0x3e424e, rockL: 0x717988,
+  dirt: 0x624c33, dirtD: 0x453421, sand: 0x8a734f,
   bone: 0xd9cca7, boneD: 0xb0a17e,
   wood: 0x4e3624, woodD: 0x36241a,
   canvas: 0xa8a08a, canvasD: 0x7d7663,
@@ -49,7 +49,7 @@ export function buildWorld(scene) {
       if (d < ARENA + 7) continue;
       const t = (d - (ARENA + 7)) / (outer - ARENA - 7);
       const n = fbm2(x * 0.09, z * 0.09);
-      let h = Math.pow(t, 1.45) * 30 * (0.5 + n * 0.95);
+      let h = Math.pow(t, 1.9) * 34 * (0.5 + n * 0.95);
       if (h < 0.6) continue;
       h = Math.round(h);
       if (d > ARENA + 18 && ((x + z) % 2 === 0)) continue;   // thin out far cells
@@ -294,8 +294,13 @@ export function buildDigSites(scene, count = 26) {
 
     // marker flag so the player can see it from across the arena
     const fb = new VoxBuilder();
-    fb.box(-0.07, 0, -0.07, 0.14, 1.85, 0.14, PAL.woodD, R_WOOD);
-    fb.box(0.06, 1.34, -0.05, 0.7, 0.46, 0.1, PAL.banner, R_CLOTH);
+    fb.box(-0.08, 0, -0.08, 0.16, 2.5, 0.16, PAL.woodD, R_WOOD);
+    fb.box(0.07, 1.74, -0.06, 0.78, 0.52, 0.1, PAL.banner,
+      { rough: 0.9, emissive: 0xc03a26, emissiveIntensity: 0.22, jitter: 0.06 });
+    fb.box(0.07, 1.66, -0.06, 0.78, 0.09, 0.1, 0xffd27a,
+      { emissive: 0xffb040, emissiveIntensity: 0.7, rough: 0.5 });
+    fb.box(-0.11, 2.5, -0.11, 0.22, 0.22, 0.22, 0xffd27a,
+      { emissive: 0xffa83c, emissiveIntensity: 1.15, rough: 0.4 });
     const flag = new THREE.Mesh(fb.geometry(), mat);
     flag.castShadow = true;
     flag.position.set(x + 1.0, 0, z + 0.6);

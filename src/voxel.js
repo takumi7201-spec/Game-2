@@ -82,11 +82,18 @@ export class VoxBuilder {
 }
 
 // Standard material patched to read per-vertex roughness / metalness / emissive.
+// Shared by every voxel material: how far the focus point is from the camera.
+// Geometry that sits well in front of that plane is dissolved away so cliffs
+// and props never wall off the view of the character.
+export const occlusion = { uFocusDist: { value: 1e6 }, uFocusPos: { value: new THREE.Vector3() } };
+
 export function voxelMaterial(params = {}) {
   const m = new THREE.MeshStandardMaterial(Object.assign({
     vertexColors: true, roughness: 1.0, metalness: 1.0,
   }, params));
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uFocusDist = occlusion.uFocusDist;
+    shader.uniforms.uFocusPos = occlusion.uFocusPos;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec2 aRM;
@@ -99,17 +106,37 @@ export function voxelMaterial(params = {}) {
         vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
+        uniform float uFocusDist;
+        uniform vec3 uFocusPos;
         varying vec2 vRM;
         varying vec3 vEmis;
         varying vec3 vWPos;
         // cheap 3d value noise for micro surface breakup
         float vhash(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
+        // interleaved gradient noise -> screen-door dissolve, no lookup table
+        float dither(vec2 p){
+          return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+        }
         float vnoise(vec3 p){
           vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
           return mix(mix(mix(vhash(i+vec3(0,0,0)),vhash(i+vec3(1,0,0)),f.x),
                          mix(vhash(i+vec3(0,1,0)),vhash(i+vec3(1,1,0)),f.x),f.y),
                      mix(mix(vhash(i+vec3(0,0,1)),vhash(i+vec3(1,0,1)),f.x),
                          mix(vhash(i+vec3(0,1,1)),vhash(i+vec3(1,1,1)),f.x),f.y),f.z);
+        }`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        {
+          // dissolve only what actually stands between the camera and the player:
+          // much nearer than the focus plane AND close to the line of sight
+          vec3 toFrag = vWPos - cameraPosition;
+          float camDist = length(toFrag);
+          vec3 sight = normalize(uFocusPos - cameraPosition);
+          float along = dot(toFrag, sight);
+          float radial = length(vWPos - (cameraPosition + sight * along));
+          float nearMask = smoothstep(uFocusDist - 3.0, uFocusDist - 9.0, camDist);
+          float radMask = smoothstep(9.0, 3.5, radial);
+          float vis = 1.0 - nearMask * radMask;
+          if (vis < dither(gl_FragCoord.xy)) discard;
         }`)
       .replace('#include <roughnessmap_fragment>', `
         float n0 = vnoise(vWPos * 5.5);

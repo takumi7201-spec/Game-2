@@ -98,12 +98,12 @@ export class WetGround {
           float seam = min(min(fcell.x, 1.0-fcell.x), min(fcell.y, 1.0-fcell.y));
           float seamMask = smoothstep(0.0, 0.055, seam);
           float grain = fbm(wp*7.0)*0.5 + fbm(wp*31.0)*0.25;
-          vec3 stoneA = vec3(0.128, 0.132, 0.146);
-          vec3 stoneB = vec3(0.074, 0.079, 0.094);
+          vec3 stoneA = vec3(0.168, 0.174, 0.193);
+          vec3 stoneB = vec3(0.096, 0.103, 0.124);
           vec3 stone = mix(stoneB, stoneA, cr*0.75 + grain*0.55);
           // dirt / sand drift toward the dig area
           float dirt = smoothstep(0.55, 0.95, fbm(wp*0.22 + 3.1));
-          stone = mix(stone, vec3(0.152,0.118,0.083), dirt*0.55);
+          stone = mix(stone, vec3(0.196,0.150,0.102), dirt*0.55);
           stone *= 0.82 + 0.30*seamMask;
           diffuseColor.rgb *= stone;`)
         // ------------------------------------------------ puddle + roughness

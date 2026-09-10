@@ -6,18 +6,19 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { WetGround } from './ground.js';
 import { buildWorld, buildDigSites, buildSky, ARENA } from './world.js';
 import { createHunter, createDino } from './chars.js';
-import { makeRain, makeEmbers, makeFireflies, makeFogSheets, makeBats, Sparks } from './fx.js';
+import { makeRain, makeEmbers, makeFireflies, makeFogSheets, makeBats, Sparks, makeBeacons, makeGuideArrow } from './fx.js';
+import { occlusion } from './voxel.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.16;
+renderer.toneMappingExposure = 1.30;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x0c1729, 0.0082);
+scene.fog = new THREE.FogExp2(0x101d31, 0.0076);
 
 // ------------------------------------------------------------------ camera
 const camera = new THREE.PerspectiveCamera(19, 1, 0.5, 700);
@@ -25,7 +26,7 @@ const cam = { yaw: Math.PI * 0.25, pitch: 0.555, dist: 46, target: new THREE.Vec
 const camSmooth = { yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist, target: cam.target.clone() };
 
 // ---------------------------------------------------------------- lighting
-const moon = new THREE.DirectionalLight(0xa6c4ff, 2.75);
+const moon = new THREE.DirectionalLight(0xb2ccff, 2.95);
 moon.position.set(-34, 46, -26);
 moon.castShadow = true;
 moon.shadow.mapSize.set(2048, 2048);
@@ -36,9 +37,9 @@ moon.shadow.bias = -0.0011;
 moon.shadow.normalBias = 0.035;
 scene.add(moon, moon.target);
 
-const hemi = new THREE.HemisphereLight(0x33507c, 0x14111c, 0.66);
+const hemi = new THREE.HemisphereLight(0x4266a0, 0x1c1926, 0.72);
 scene.add(hemi);
-const fillLight = new THREE.DirectionalLight(0x2f6d92, 0.52);
+const fillLight = new THREE.DirectionalLight(0x3f86ad, 0.78);
 fillLight.position.set(20, 12, 26);
 scene.add(fillLight);
 
@@ -49,12 +50,14 @@ const skyObj = buildSky(scene);
 const world = buildWorld(scene);
 const dig = buildDigSites(scene, 14);
 
-const ground = new WetGround(230, 0.55);
+const ground = new WetGround(230, 0.42);
 scene.add(ground.mesh);
 
 // point lights from emissive props (cap for perf)
 const pointLights = [];
-world.emissivePoints.slice(0, 9).forEach(p => {
+// the four altar pillars are decorative; their glow is carried by emissive alone
+const litProps = world.emissivePoints.filter(p => p.intensity > 1.5).slice(0, 5);
+litProps.forEach(p => {
   const l = new THREE.PointLight(p.color, p.intensity, p.dist, 2.0);
   l.position.set(p.x, p.y, p.z);
   l.userData.base = p.intensity;
@@ -73,7 +76,7 @@ world.emissivePoints.slice(0, 9).forEach(p => {
   skyScene.add(s2);
   const env = pmrem.fromScene(skyScene, 0, 0.1, 500);
   scene.environment = env.texture;
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = 0.60;
   pmrem.dispose();
 }
 
@@ -84,6 +87,8 @@ const fireflies = makeFireflies(scene, 170, 22);
 const fog = makeFogSheets(scene, 11);
 const bats = makeBats(scene, 24);
 const sparks = new Sparks(scene, 1100);
+const beacons = makeBeacons(scene, dig.sites);
+const guide = makeGuideArrow(scene);
 
 // --------------------------------------------------------------- hunter
 const hunter = createHunter();
@@ -100,9 +105,24 @@ const hunterState = {
 // ------------------------------------------------------------ post stack
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.34, 0.62, 0.86);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 144), 0.38, 0.62, 0.84);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
+
+const QUALITY = [
+  { dpr: 1.5,  refl: 0.42 },
+  { dpr: 1.25, refl: 0.38 },
+  { dpr: 1.0,  refl: 0.34 },
+  { dpr: 0.85, refl: 0.30 },
+];
+let qLevel = 0, qHoldT = 0;
+
+function applyQuality() {
+  const q = QUALITY[qLevel];
+  renderer.setPixelRatio(Math.min(devicePixelRatio, q.dpr));
+  ground.resScale = q.refl;
+  resize();
+}
 
 function resize() {
   const w = innerWidth, h = innerHeight;
@@ -151,7 +171,7 @@ canvas.addEventListener('pointermove', (e) => {
   lastX = e.clientX; lastY = e.clientY;
   dragMoved += Math.abs(dx) + Math.abs(dy);
   cam.yaw -= dx * 0.0055;
-  cam.pitch = THREE.MathUtils.clamp(cam.pitch - dy * 0.004, 0.18, 0.95);
+  cam.pitch = THREE.MathUtils.clamp(cam.pitch - dy * 0.004, 0.34, 0.95);
 });
 function endPointer(e) {
   const wasPinching = touches.size === 2;
@@ -219,6 +239,7 @@ function hint(msg) { el('hintText').textContent = msg; }
 function refreshHud() {
   el('fossils').textContent = G.fossils;
   el('shards').textContent = G.shards;
+  el('sites').textContent = dig.sites.filter(s => !s.done).length;
   const next = SPECIES.find(s => !G.revived.includes(s.name));
   el('progress').textContent = next
     ? `${next.name} 復活まで 化石 ${Math.max(0, next.cost - G.fossils)} 個`
@@ -325,6 +346,7 @@ function updateDig(dt) {
         t.site.done = true;
         t.site.mesh.visible = false;
         t.site.flag.visible = false;
+        beacons.clear(dig.sites.indexOf(t.site));
         G.fossils++;
         sparks.burst(p.x, 0.8, p.z, 120, 0xffe08a, { spread: 4.2, up: 7.0, life: 1.3, size: 3.0 });
         toast('化石を発見!');
@@ -337,6 +359,24 @@ function updateDig(dt) {
       refreshHud();
     }, 260);
   }
+}
+
+// -------------------------------------------------- nearest-site signposting
+function updateGuide(dt) {
+  let best = null, bestD = 1e9;
+  dig.sites.forEach(s => {
+    if (s.done) return;
+    const d = s.pos.distanceToSquared(hunter.group.position);
+    if (d < bestD) { bestD = d; best = s; }
+  });
+  const m = guide.mesh;
+  if (!best) { m.visible = false; return; }
+  m.visible = true;
+  m.position.set(hunter.group.position.x, 0.06, hunter.group.position.z);
+  const want = Math.atan2(best.pos.x - m.position.x, best.pos.z - m.position.z);
+  m.rotation.y = lerpAngle(m.rotation.y, want, 1 - Math.pow(0.001, dt));
+  // fade out once you are standing on the site
+  guide.mat.uniforms.uFade.value = THREE.MathUtils.clamp((Math.sqrt(bestD) - 2.5) / 3.0, 0, 1);
 }
 
 // ------------------------------------------------------------- battle AI
@@ -462,7 +502,10 @@ function lerpAngle(a, b, t) {
 // ================================================================= loop
 const clock = new THREE.Clock();
 let elapsed = 0, frames = 0, fpsT = 0, fps = 0;
-const hiddenFromReflection = [];
+const hiddenFromReflection = [
+  rain.points, embers.points, fireflies.points, fog.mesh, bats.points,
+  sparks.points, beacons.mesh, guide.mesh,
+];
 
 function tick() {
   requestAnimationFrame(tick);
@@ -490,6 +533,7 @@ function tick() {
 
   updateDig(dt);
   updateBattle(dt);
+  updateGuide(dt);
 
   // ---- lazy camera follow
   cam.target.lerp(new THREE.Vector3(hp.x, 1.1, hp.z), 1 - Math.pow(0.0015, dt));
@@ -510,6 +554,10 @@ function tick() {
   moon.target.updateMatrixWorld();
 
   // ---- fx uniforms
+  occlusion.uFocusPos.value.set(cp.target.x, cp.target.y + 1.1, cp.target.z);
+  occlusion.uFocusDist.value = camera.position.distanceTo(occlusion.uFocusPos.value);
+  beacons.mat.uniforms.uTime.value = elapsed;
+  guide.mat.uniforms.uTime.value = elapsed;
   rain.mat.uniforms.uTime.value = elapsed;
   rain.mat.uniforms.uCam.value.copy(camera.position);
   embers.mat.uniforms.uTime.value = elapsed;
@@ -533,7 +581,15 @@ function tick() {
 
   // ---- hud
   frames++; fpsT += dt;
-  if (fpsT > 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0; el('perf').textContent = `${fps.toFixed(0)} FPS`; }
+  if (fpsT > 0.5) {
+    fps = frames / fpsT; frames = 0; fpsT = 0;
+    el('perf').textContent = `${fps.toFixed(0)} FPS`;
+    qHoldT += 0.5;
+    if (qHoldT > 1.5) {
+      if (fps < 55 && qLevel < QUALITY.length - 1) { qLevel++; applyQuality(); qHoldT = 0; }
+      else if (fps > 75 && qLevel > 0) { qLevel--; applyQuality(); qHoldT = 0; }
+    }
+  }
   if (G.toastT > 0) { G.toastT -= dt; if (G.toastT <= 0) el('toast').style.opacity = '0'; }
 }
 
@@ -541,4 +597,5 @@ refreshHud();
 el('load').style.display = 'none';
 tick();
 
-window.__demo = { scene, camera, renderer, G, hunter, cam, hunterState, dig, world, sparks, spawnEnemy, spawnDino, SPECIES };
+window.__demo = { scene, camera, renderer, G, hunter, cam, hunterState, dig, world, sparks, spawnEnemy, spawnDino, SPECIES,
+  setQuality(n) { qLevel = Math.max(0, Math.min(QUALITY.length - 1, n)); applyQuality(); qHoldT = -1e6; } };

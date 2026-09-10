@@ -312,3 +312,92 @@ export class Sparks {
     if (any) { this.geo.attributes.position.needsUpdate = true; this.geo.attributes.aDat.needsUpdate = true; }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Dig-site beacons: one additive billboard shaft per site, all in one draw call.
+// Visible across the whole arena so a flag is never something you have to hunt for.
+// ---------------------------------------------------------------------------
+export function makeBeacons(scene, sites) {
+  const n = sites.length;
+  const quad = new THREE.PlaneGeometry(1, 1);
+  const inst = new Float32Array(n * 4);            // x, z, seed, active
+  sites.forEach((s, i) => {
+    inst[i * 4] = s.pos.x; inst[i * 4 + 1] = s.pos.z;
+    inst[i * 4 + 2] = Math.random(); inst[i * 4 + 3] = 1;
+  });
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = quad.index;
+  g.attributes.position = quad.attributes.position;
+  g.attributes.uv = quad.attributes.uv;
+  const attr = new THREE.InstancedBufferAttribute(inst, 4);
+  g.setAttribute('aInst', attr);
+  g.instanceCount = n;
+
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      attribute vec4 aInst;
+      uniform float uTime;
+      varying vec2 vUv; varying float vSeed; varying float vNear;
+      void main(){
+        vUv = uv; vSeed = aInst.z;
+        if (aInst.w < 0.5) { gl_Position = vec4(2.0,2.0,2.0,1.0); return; }
+        vec3 right = normalize(vec3(modelViewMatrix[0][0], 0.0, modelViewMatrix[2][0]));
+        vec3 wp = vec3(aInst.x, 0.0, aInst.y)
+                + right * position.x * 0.62
+                + vec3(0.0, (position.y + 0.5) * 5.2, 0.0);
+        vec4 mv = modelViewMatrix * vec4(wp, 1.0);
+        // close beacons stay quiet; the point of them is the ones far away
+        vNear = smoothstep(9.0, 26.0, -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      varying vec2 vUv; varying float vSeed; varying float vNear; uniform float uTime;
+      void main(){
+        float edge = smoothstep(0.5, 0.12, abs(vUv.x - 0.5));   // soft vertical shaft
+        float rise = pow(1.0 - vUv.y, 2.2);                      // brightest at the ground
+        float pulse = 0.62 + 0.38 * sin(uTime * 2.4 + vSeed * 6.28);
+        // a bright band travelling up the shaft
+        float band = smoothstep(0.16, 0.0, abs(fract(vUv.y - uTime * 0.32 + vSeed) - 0.5));
+        vec3 col = mix(vec3(1.0, 0.72, 0.26), vec3(1.0, 0.94, 0.72), band);
+        gl_FragColor = vec4(col, edge * rise * (0.12 + band * 0.20) * pulse * (0.35 + vNear * 0.65));
+      }`,
+  });
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 3;
+  scene.add(mesh);
+  return {
+    mesh, mat,
+    clear(i) { inst[i * 4 + 3] = 0; attr.needsUpdate = true; },
+  };
+}
+
+// Ground chevron under the hunter pointing at the nearest un-dug site.
+export function makeGuideArrow(scene) {
+  const geo = new THREE.PlaneGeometry(1.6, 3.4);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, 0, 2.2);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { uTime: { value: 0 }, uFade: { value: 1 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      varying vec2 vUv; uniform float uTime, uFade;
+      void main(){
+        // three chevrons marching away from the player
+        float y = fract(vUv.y * 3.0 - uTime * 0.9);
+        float x = abs(vUv.x - 0.5) * 2.0;
+        float chev = smoothstep(0.34, 0.0, abs(y - x * 0.42 - 0.25));
+        float body = smoothstep(1.0, 0.35, x) * smoothstep(0.0, 0.18, vUv.y) * (1.0 - vUv.y * 0.35);
+        gl_FragColor = vec4(vec3(1.0, 0.86, 0.5), chev * body * 0.5 * uFade);
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = 0.06;
+  mesh.renderOrder = 2;
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return { mesh, mat };
+}
