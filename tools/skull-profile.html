@@ -13,7 +13,7 @@ const b = new VoxelBuilder();
 const rnd = mulberry32(7);
 const whole = location.search.includes('body');
 if (whole) fossilBeast(b, rnd, 0, 0, 0);
-else trexSkull(b, new THREE.Matrix4(), 0, 0, 0, 0, rnd, { len: 3.1, jawDrop: 0.13 });
+else trexSkull(b, new THREE.Matrix4(), 0, 0, 0, 0, rnd, { len: 3.1, jawDrop: 0.15 });
 const geo = b.build();
 const m = new THREE.Mesh(geo, toonMaterial({ vertexColors: true }));
 m.add(new THREE.Mesh(geo, outlineMaterial(0.012)));

@@ -2,7 +2,7 @@
 // Static props are merged into a handful of batched draw calls; only things
 // that actually move keep their own transform.
 import * as THREE from '../../vendor/three/three.module.js';
-import { mulberry32, lerp, clamp } from '../lib/math.js';
+import { mulberry32, lerp } from '../lib/math.js';
 import { VoxelBuilder, toonMaterial, addOutline, outlineMaterial } from '../lib/voxel.js';
 import { applyWind, windOutlineMaterial } from '../lib/wind.js';
 import { CFG, groundAt, isLand, surfaceAt, slopeAt } from './terrain.js';
@@ -44,7 +44,7 @@ const _UP = new THREE.Vector3(0, 1, 0);
  * Chaining these with a shrinking width gives smooth tapered rods instead of
  * a staircase of axis-aligned cubes.
  */
-function rod(b, base, a, c, w, color, opts = {}, pad = 0.04) {
+function rod(b, base, a, c, w, color, opts = {}, pad = 0.04, depth = 0) {
   _rd.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
   const len = _rd.length();
   if (len < 1e-5) return;
@@ -54,7 +54,7 @@ function rod(b, base, a, c, w, color, opts = {}, pad = 0.04) {
   _rm.compose(_rc, _rq, _r1);
   _rm.premultiply(base);
   b.setTransform(_rm);
-  b.box(0, 0, 0, w, len + pad, w, color, opts);
+  b.box(0, 0, 0, w, len + pad, depth || w, color, opts);
 }
 
 const COL = {
@@ -308,124 +308,93 @@ function signpost(b, x, z, yaw) {
  * huge antorbital fenestra, a keyhole orbit set high, the broad temporal
  * opening behind it, and a deep boxy back. No horns, no crest.
  */
-const TREX = {
-  cols: 13,
-  // side view, top row first. Column 0 is the snout tip, 12 the occiput,
-  // row 0 the maxillary tooth row.
-  skull: [
-    '........###..',
-    '.......#####.',
-    '.....###.#..#',
-    '...#####.#..#',
-    '.###...###..#',
-    '#..#...#####.',
-    '####...###..#',
-    '#########....',
-  ],
-  // lower jaw: a coronoid bump above the tooth margin, then the dentary
-  jaw: [
-    '.........##..',
-    '.############',
-    '.######..####',
-    '..######.....',
-  ],
-  jawTopRow: 1,          // index in `jaw` that lines up with the tooth margin
-  // full width per column, in cells: narrow snout, broad braincase
-  wide: [1.9, 2.0, 2.1, 2.2, 2.4, 2.6, 2.9, 3.2, 3.6, 3.9, 4.0, 3.8, 3.4],
-};
-
-/** Half-width multiplier across the skull's height: an arch, not a slab. */
-const archProfile = (v) => 0.6 + 0.4 * Math.sin(Math.PI * Math.pow(clamp(v, 0, 1), 0.85));
-
-function gridAt(map, c, r) {
-  const row = map[map.length - 1 - r];      // row 0 is the bottom line
-  return !!row && row[c] === '#';
-}
-
+/**
+ * Tyrannosaurus skull.
+ *
+ * Built the way the real thing is - a frame of struts - rather than as a solid
+ * grid with holes cut in it. Two reasons: at this block size every cell
+ * boundary picks up its own ink outline, so a grid skull ends up hatched with
+ * seams while the rest of the skeleton is smooth rods; and the fenestrae then
+ * fall out naturally as the gaps between bones. The outline members (skull
+ * roof, nasals, premaxilla, maxilla, jugal, quadrate) box in the silhouette and
+ * three uprights - postorbital bar, lacrimal, ascending ramus of the maxilla -
+ * divide the space between them into, back to front: lateral temporal
+ * fenestra, orbit, antorbital fenestra, naris.
+ *
+ * Design units: occiput at x = 0, snout tip at 3.2, tooth row at y = 0.
+ */
 export function trexSkull(b, base, ox, oy, oz, tilt, rnd, opts = {}) {
-  const T = TREX;
-  const { len = 2.6, jawDrop = 0.15 } = opts;
-  const cell = len / T.cols;
-  const rows = T.skull.length;
+  const { len = 3.1, jawDrop = 0.15 } = opts;
+  const k = len / 3.2;
   const bone = () => (rnd() < 0.22 ? COL.boneWarm : COL.bone);
   const skullM = new THREE.Matrix4()
     .compose(new THREE.Vector3(ox, oy, oz),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, tilt)),
-      new THREE.Vector3(1, 1, 1))
+      new THREE.Vector3(k, k, k))
     .premultiply(base);
 
-  const xOf = (c) => (T.cols - 1 - c) * cell;
-  const put = (m, x, y, z, w, h, d, tint) => {
+  // a bone: thickness `w` across the bar, `d` across the skull
+  const bar = (m, ax, ay, cx, cy, w, d, tint = 1) =>
+    rod(b, m, [ax, ay, 0], [cx, cy, 0], w, bone(),
+      { tint: tint * (0.97 + rnd() * 0.06) }, 0.02, d);
+  const box = (m, x, y, z, w, h, d, tint = 1) => {
     b.setTransform(m);
-    b.box(x, y, z, w, h, d, bone(), { tint: tint * (0.96 + rnd() * 0.08) });
+    b.box(x, y, z, w, h, d, bone(), { tint: tint * (0.97 + rnd() * 0.06) });
   };
 
-  // --- cranium ------------------------------------------------------------
-  const colSpan = [];
-  for (let c = 0; c < T.cols; c++) {
-    let lo = 99, hi = -1;
-    for (let r = 0; r < rows; r++) if (gridAt(T.skull, c, r)) { lo = Math.min(lo, r); hi = Math.max(hi, r); }
-    colSpan[c] = [lo, hi];
-  }
-  for (let c = 0; c < T.cols; c++) {
-    const [lo, hi] = colSpan[c];
-    for (let r = 0; r < rows; r++) {
-      if (!gridAt(T.skull, c, r)) continue;
-      const v = (r - lo) / Math.max(hi - lo, 1);
-      const open = !gridAt(T.skull, c - 1, r) || !gridAt(T.skull, c + 1, r)
-        || !gridAt(T.skull, c, r - 1) || !gridAt(T.skull, c, r + 1);
-      const w = T.wide[c] * cell * archProfile(v) * (open ? 0.84 : 1);
-      put(skullM, xOf(c), r * cell, 0, cell * 1.02, cell * 1.02, w, open ? 0.92 : 1);
-    }
-  }
+  // --- outline members -----------------------------------------------------
+  bar(skullM, 0.26, 1.62, 1.60, 1.52, 0.30, 0.92);      // skull roof
+  bar(skullM, 1.52, 1.44, 2.84, 1.14, 0.28, 0.58);      // nasals
+  bar(skullM, 2.86, 1.22, 3.06, 0.30, 0.40, 0.50);      // premaxilla, blunt tip
+  bar(skullM, 1.45, 0.30, 3.00, 0.20, 0.46, 0.66);      // maxilla, tooth bearing
+  bar(skullM, 0.42, 0.40, 1.62, 0.28, 0.28, 0.50);      // jugal
+  bar(skullM, 0.30, 1.54, 0.34, 0.22, 0.36, 0.76);      // quadrate
 
-  // lateral offset that lands on the skull surface at a given cell
-  const surfaceZ = (c, r) => {
-    const [lo, hi] = colSpan[Math.round(c)];
-    return T.wide[Math.round(c)] * cell
-      * archProfile((r - lo) / Math.max(hi - lo, 1)) * 0.46;
-  };
-  // the rugose lumps a T. rex carries on the lacrimal and postorbital
+  // braincase set well in behind the temporal opening, so the fenestra reads as
+  // an opening with something recessed inside rather than a filled panel
+  box(skullM, 0.34, 1.05, 0, 0.5, 0.82, 0.44, 0.8);
+  bar(skullM, 0.06, 1.48, 0.30, 0.30, 0.32, 0.66, 0.88);   // occiput, raked back
+  box(skullM, -0.04, 0.76, 0, 0.22, 0.3, 0.3, 0.95);    // occipital condyle
+  box(skullM, 0.34, 0.14, 0, 0.44, 0.34, 0.8, 0.96);    // jaw articulation
+
+  // --- uprights that divide the openings -----------------------------------
+  bar(skullM, 1.02, 1.52, 1.12, 0.38, 0.26, 0.46);      // postorbital bar
+  bar(skullM, 1.52, 1.52, 1.60, 0.40, 0.26, 0.46);      // lacrimal
+  bar(skullM, 2.50, 1.24, 2.40, 0.46, 0.24, 0.42);      // ascending ramus
+
+  // rugose lumps on the lacrimal and postorbital (a T. rex has no horns)
   for (const s of [-1, 1]) {
-    put(skullM, xOf(7.2), cell * 5.3, s * surfaceZ(7, 5.3), cell * 1.3, cell * 1.1, cell * 0.8, 0.95);
-    put(skullM, xOf(9.3), cell * 6.4, s * surfaceZ(9, 6.4), cell * 1.2, cell * 1.0, cell * 0.8, 0.95);
+    box(skullM, 1.55, 1.6, s * 0.4, 0.44, 0.3, 0.26, 0.95);
+    box(skullM, 1.0, 1.62, s * 0.38, 0.36, 0.26, 0.24, 0.95);
   }
-  put(skullM, xOf(12) - cell * 0.5, cell * 2.4, 0, cell * 0.8, cell * 1.0, cell * 1.0, 0.94);
 
-  // --- lower jaw, hinged open at the articulation --------------------------
-  const px = xOf(11.7), py = 0;
-  const jawM = new THREE.Matrix4().makeTranslation(px, py - cell * 0.95, 0)
+  // --- lower jaw, hinged at the articulation -------------------------------
+  const px = 0.34 * k, py = 0.08 * k;
+  const jawM = new THREE.Matrix4().makeTranslation(px, py, 0)
     .multiply(new THREE.Matrix4().makeRotationZ(-jawDrop))
     .multiply(new THREE.Matrix4().makeTranslation(-px, -py, 0))
     .premultiply(skullM);
-  const jawRows = T.jaw.length;
-  for (let c = 0; c < T.cols; c++) {
-    for (let r = 0; r < jawRows; r++) {
-      if (!gridAt(T.jaw, c, r)) continue;
-      const y = (r - (jawRows - 1 - T.jawTopRow)) * cell;
-      const open = !gridAt(T.jaw, c - 1, r) || !gridAt(T.jaw, c + 1, r)
-        || !gridAt(T.jaw, c, r - 1) || !gridAt(T.jaw, c, r + 1);
-      const w = T.wide[c] * cell * 0.76 * (open ? 0.88 : 1);
-      put(jawM, xOf(c), y, 0, cell * 1.02, cell * 1.02, w, open ? 0.93 : 1);
-    }
-  }
+  bar(jawM, 0.30, -0.26, 3.02, -0.40, 0.3, 0.58);       // upper rail
+  bar(jawM, 1.28, -0.66, 3.00, -0.72, 0.44, 0.56);      // dentary body
+  bar(jawM, 0.32, -0.52, 1.08, -0.58, 0.36, 0.54);      // angular
+  box(jawM, 3.02, -0.5, 0, 0.34, 0.76, 0.48);           // chin
+  box(jawM, 0.98, 0.0, 0, 0.46, 0.34, 0.52, 0.97);      // coronoid
+  box(jawM, 0.3, -0.3, 0, 0.4, 0.42, 0.7, 0.96);        // articular
 
-  // --- teeth --------------------------------------------------------------
-  const toothLen = (c) => 0.85 + 1.15 * Math.exp(-Math.pow((c - 2.6) / 2.8, 2));
-  for (let c = 0.3; c < 8.4; c += 1.3) {
-    const L = toothLen(c) * cell;
-    const z = surfaceZ(Math.min(Math.round(c), 8), 0.4) * 0.94;
-    const x = xOf(c);
+  // --- teeth ---------------------------------------------------------------
+  const toothLen = (x) => 0.32 + 0.36 * Math.exp(-Math.pow((x - 2.45) / 0.8, 2));
+  for (let x = 1.62; x < 3.12; x += 0.29) {
+    const L = toothLen(x);
     for (const s of [-1, 1]) {
-      rod(b, skullM, [x, -cell * 0.35, s * z], [x - L * 0.3, -cell * 0.35 - L, s * z * 0.94],
-        cell * 0.6, bone(), { tint: 1.05 }, 0);
-      const L2 = L * 0.8;
-      rod(b, jawM, [x, cell * 0.4, s * z * 0.92], [x - L2 * 0.24, cell * 0.4 + L2, s * z * 0.88],
-        cell * 0.52, bone(), { tint: 1.05 }, 0);
+      rod(b, skullM, [x, 0.0, s * 0.3], [x - L * 0.3, -L, s * 0.29],
+        0.15, bone(), { tint: 1.05 }, 0);
+      const L2 = L * 0.78;
+      rod(b, jawM, [x, -0.12, s * 0.27], [x - L2 * 0.24, -0.12 + L2, s * 0.26],
+        0.13, bone(), { tint: 1.05 }, 0);
     }
   }
   b.setTransform(null);
-  return { length: len, height: rows * cell };
+  return { length: len, height: 1.85 * k };
 }
 
 /**
