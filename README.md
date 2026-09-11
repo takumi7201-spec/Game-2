@@ -20,6 +20,17 @@ python3 -m http.server 8080
 # → http://localhost:8080/index.html
 ```
 
+### 単一 HTML に固める
+
+配布用に、Three.js もコードも全部ひとつの HTML に入れたものを作れます
+（約 0.6 MB、`file://` で直接開けます）。
+
+```bash
+npm i -D esbuild
+node tools/build-standalone.mjs
+# → dist/fossil-isle.html
+```
+
 ## 操作
 
 | 操作 | 動作 |
@@ -83,6 +94,7 @@ python3 -m http.server 8080
 ```
 index.html
 tools/skull-profile.html   頭骨・骨格の確認用ビュー（?top / ?body）
+tools/build-standalone.mjs 単一 HTML へのバンドル
 vendor/three/        Three.js r186（同梱、CDN 不要）
 src/main.js          レンダラ・ライト・ループ・品質制御
 src/camera.js        アイソメトリック操作（回転 / ズーム / 遅延追従）
