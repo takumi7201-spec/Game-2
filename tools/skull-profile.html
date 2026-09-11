@@ -2,7 +2,7 @@
 <script type="module">
 import * as THREE from '../vendor/three/three.module.js';
 import { VoxelBuilder, toonMaterial, outlineMaterial } from '../src/lib/voxel.js';
-import { trexSkull } from '../src/world/props.js';
+import { trexSkull, fossilBeast } from '../src/world/props.js';
 import { mulberry32 } from '../src/lib/math.js';
 
 const W = 960, H = 520;
@@ -11,7 +11,9 @@ r.setSize(W, H); r.setClearColor(0xcfe3f2);
 const scene = new THREE.Scene();
 const b = new VoxelBuilder();
 const rnd = mulberry32(7);
-const info = trexSkull(b, new THREE.Matrix4(), 0, 0, 0, 0, rnd, Number(location.hash.slice(1) || 0.16));
+const whole = location.search.includes('body');
+if (whole) fossilBeast(b, rnd, 0, 0, 0);
+else trexSkull(b, new THREE.Matrix4(), 0, 0, 0, 0, rnd, { len: 2.3, jawDrop: 0.13 });
 const geo = b.build();
 const m = new THREE.Mesh(geo, toonMaterial({ vertexColors: true }));
 m.add(new THREE.Mesh(geo, outlineMaterial(0.012)));
@@ -24,8 +26,8 @@ const sx = (bb.max.x - bb.min.x) * 0.56, sy = (bb.max.y - bb.min.y) * 0.56;
 const half = Math.max(sx, sy * W / H);
 const cam = new THREE.OrthographicCamera(-half, half, half * H / W, -half * H / W, -100, 100);
 const side = location.search.includes('top');
-if (side) { cam.position.set(cx, 10, 0); cam.up.set(-1, 0, 0); cam.lookAt(cx, 0, 0); }
-else { cam.position.set(cx, cy, 10); cam.lookAt(cx, cy, 0); }
+if (side) { cam.position.set(cx, 40, 0); cam.up.set(-1, 0, 0); cam.lookAt(cx, 0, 0); }
+else { cam.position.set(cx, cy, 40); cam.lookAt(cx, cy, 0); }
 scene.add(new THREE.DirectionalLight(0xffffff, 2.4).translateX(-3).translateY(6).translateZ(8));
 const d2 = new THREE.DirectionalLight(0x9fc4ff, 1.0); d2.position.set(4, -2, -6); scene.add(d2);
 scene.add(new THREE.HemisphereLight(0xbfe0ff, 0x6a6050, 1.0));
