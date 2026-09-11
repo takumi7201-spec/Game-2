@@ -2,7 +2,7 @@
 // Static props are merged into a handful of batched draw calls; only things
 // that actually move keep their own transform.
 import * as THREE from '../../vendor/three/three.module.js';
-import { mulberry32, lerp } from '../lib/math.js';
+import { mulberry32, lerp, clamp } from '../lib/math.js';
 import { VoxelBuilder, toonMaterial, addOutline, outlineMaterial } from '../lib/voxel.js';
 import { applyWind, windOutlineMaterial } from '../lib/wind.js';
 import { CFG, groundAt, isLand, surfaceAt, slopeAt } from './terrain.js';
@@ -297,6 +297,156 @@ function signpost(b, x, z, yaw) {
   b.setTransform(null);
 }
 
+/**
+ * Tyrannosaurus skull, built by projecting its lateral profile into voxels.
+ *
+ * A theropod skull reads as one because of its openings, not because of horns:
+ * the dorsal/ventral margins are sampled per column, the fenestrae are punched
+ * through as ellipses, and the cross-section swells at mid height so the thing
+ * is an arch rather than a slab. Columns run snout (0) to occiput (25).
+ */
+const TREX = {
+  cell: 0.085,
+  cols: 26,
+  // Landmarks follow a lateral drawing of a large specimen, normalised so that
+  // snout tip -> occiput is 25 cells and everything else is measured in the
+  // same square cells above the maxillary tooth row.
+  // dorsal margin: long and low over the snout, then a steep climb at the
+  // lacrimal to a deep, boxy back - the T. rex signature
+  top: [5.5, 5.8, 6.1, 6.3, 6.5, 6.6, 6.8, 6.9, 7.1, 7.4, 7.8, 8.3, 9.0,
+        9.9, 11.0, 12.2, 13.1, 13.7, 14.0, 14.1, 14.1, 14.0, 13.7, 13.1, 12.1, 11.0],
+  // ventral margin: flat tooth row to 60%, then the jugal arch, then the
+  // quadrate dropping back down to the jaw joint
+  bot: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0.4, 1.6, 2.8, 3.4, 3.8, 3.9, 3.4, 2.0, 0.6, 1.2],
+  // full width in cells: narrow snout, very broad braincase
+  wide: [3.2, 3.4, 3.6, 3.7, 3.8, 3.9, 4.0, 4.2, 4.4, 4.7, 5.0, 5.4, 5.9,
+         6.5, 7.2, 8.0, 8.9, 9.8, 10.8, 11.8, 12.4, 12.5, 12.2, 11.4, 10.2, 9.0],
+  holes: [
+    { cx: 4.3, cy: 4.5, rx: 2.0, ry: 1.25 },     // external naris
+    { cx: 8.3, cy: 3.4, rx: 0.8, ry: 0.9 },      // maxillary fenestra
+    { cx: 12.0, cy: 5.0, rx: 2.2, ry: 2.6 },     // antorbital fenestra, rear lobe
+    { cx: 10.3, cy: 3.7, rx: 1.4, ry: 1.5 },     // ... tapering forward to a point
+    { cx: 16.7, cy: 10.2, rx: 1.8, ry: 1.7 },    // orbit, round upper lobe
+    { cx: 16.5, cy: 8.2, rx: 0.85, ry: 1.6 },    // orbit, keyhole slot below
+    { cx: 21.3, cy: 7.8, rx: 1.95, ry: 3.1 },    // lateral temporal fenestra
+  ],
+  jawTop: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+           0.4, 1.0, 1.6, 1.9, 1.8, 1.4, 1.0, 0.7, 0.5],
+  jawBot: [-1.6, -2.4, -2.9, -3.1, -3.2, -3.2, -3.15, -3.1, -3.0, -2.9,
+           -2.8, -2.7, -2.6, -2.5, -2.45, -2.4, -2.35, -2.3, -2.2, -2.1,
+           -2.0, -1.9, -1.7, -1.4, -1.0, -1.6],
+  jawHoles: [{ cx: 15.6, cy: -1.3, rx: 1.9, ry: 0.7 }],
+};
+
+const inHole = (holes, c, r) => {
+  for (const h of holes) {
+    const u = (c - h.cx) / h.rx, v = (r - h.cy) / h.ry;
+    if (u * u + v * v < 1) return true;
+  }
+  return false;
+};
+
+/** Half-width multiplier across the skull's height: an arch, not a slab. */
+const archProfile = (v) => 0.58 + 0.42 * Math.sin(Math.PI * Math.pow(clamp(v, 0, 1), 0.85));
+
+export function trexSkull(b, base, ox, oy, oz, tilt, rnd, jawDrop = 0.2) {
+  const T = TREX;
+  const cell = T.cell;
+  const bone = () => (rnd() < 0.22 ? COL.boneWarm : COL.bone);
+  const skullM = new THREE.Matrix4()
+    .compose(new THREE.Vector3(ox, oy, oz),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, tilt)),
+      new THREE.Vector3(1, 1, 1))
+    .premultiply(base);
+
+  const xOf = (c) => (T.cols - 1 - c) * cell;
+  const put = (m, x, y, z, w, h, d, tint) => {
+    b.setTransform(m);
+    b.box(x, y, z, w, h, d, bone(), { tint: tint * (0.96 + rnd() * 0.08) });
+  };
+
+  // --- cranium ------------------------------------------------------------
+  const solid = (c, r) => {
+    if (c < 0 || c >= T.cols) return false;
+    const mid = r + 0.5;
+    return mid >= T.bot[c] && mid <= T.top[c] && !inHole(T.holes, c + 0.5, mid);
+  };
+  for (let c = 0; c < T.cols; c++) {
+    const span = T.top[c] - T.bot[c];
+    for (let r = 0; r < Math.ceil(T.top[c]); r++) {
+      if (!solid(c, r)) continue;
+      const mid = r + 0.5;
+      const v = (mid - T.bot[c]) / Math.max(span, 0.001);
+      // thin the bone down around every opening so the rims read as recessed
+      const rim = !solid(c - 1, r) || !solid(c + 1, r) || !solid(c, r - 1) || !solid(c, r + 1);
+      const w = T.wide[c] * cell * archProfile(v) * (rim ? 0.78 : 1);
+      put(skullM, xOf(c), mid * cell, 0, cell * 1.02, cell * 1.02, w, rim ? 0.9 : 1);
+    }
+  }
+  // lateral offset that actually lands on the skull surface at a given height
+  const surfaceZ = (c, row) => {
+    const ci = Math.round(c);
+    const v = (row - T.bot[ci]) / Math.max(T.top[ci] - T.bot[ci], 0.001);
+    return T.wide[ci] * cell * archProfile(v) * 0.44;
+  };
+
+  // occipital condyle + the rugose bosses over each orbit (a T. rex has
+  // roughened lumps on the lacrimal and postorbital, never horns)
+  put(skullM, xOf(25) - cell * 0.7, cell * 2.6, 0, cell * 1.4, cell * 1.7, cell * 1.7, 0.94);
+  for (const s of [-1, 1]) {
+    put(skullM, xOf(15.6), cell * 9.6, s * surfaceZ(16, 9.6),
+      cell * 2.2, cell * 1.5, cell * 1.3, 0.96);        // rugose lacrimal boss
+    put(skullM, xOf(18.4), cell * 11.2, s * surfaceZ(18, 11.2),
+      cell * 1.8, cell * 1.3, cell * 1.2, 0.96);        // postorbital boss
+  }
+
+  // --- lower jaw, hinged open at the articulation --------------------------
+  const px = xOf(24.5), py = cell * 0.4;
+  const jawM = new THREE.Matrix4().makeTranslation(px, py - cell * 0.35, 0)
+    .multiply(new THREE.Matrix4().makeRotationZ(-jawDrop))
+    .multiply(new THREE.Matrix4().makeTranslation(-px, -py, 0))
+    .premultiply(skullM);
+  const jawSolid = (c, r) => {
+    if (c < 0 || c >= T.cols) return false;
+    const mid = r + 0.5;
+    return mid <= T.jawTop[c] && mid >= T.jawBot[c] && !inHole(T.jawHoles, c + 0.5, mid);
+  };
+  for (let c = 0; c < T.cols; c++) {
+    for (let r = Math.floor(T.jawBot[c]); r <= Math.ceil(T.jawTop[c]); r++) {
+      if (!jawSolid(c, r)) continue;
+      const rim = !jawSolid(c - 1, r) || !jawSolid(c + 1, r)
+        || !jawSolid(c, r - 1) || !jawSolid(c, r + 1);
+      const w = T.wide[c] * cell * 0.78 * (rim ? 0.84 : 1);
+      put(jawM, xOf(c), (r + 0.5) * cell, 0, cell * 1.02, cell * 1.02, w, rim ? 0.92 : 1);
+    }
+  }
+
+  // --- teeth: big recurved bananas in the maxilla, smaller in the dentary --
+  const toothLen = (c) => 1.1 + 2.0 * Math.exp(-Math.pow((c - 5.5) / 5.5, 2));
+  for (let c = 0.7; c < 15.6; c += 1.15) {
+    const ci = Math.round(c);
+    const L = toothLen(c) * cell;
+    const z = T.wide[ci] * cell * archProfile(0) * 0.44;
+    const x = xOf(c);
+    for (const s of [-1, 1]) {
+      // upper: down and raked back, tapering to a point
+      rod(b, skullM, [x, 0, s * z], [x - L * 0.16, -L * 0.62, s * z * 0.98],
+        cell * 0.62, bone(), { tint: 1.04 }, 0);
+      rod(b, skullM, [x - L * 0.16, -L * 0.62, s * z * 0.98],
+        [x - L * 0.3, -L, s * z * 0.95], cell * 0.34, bone(), { tint: 1.06 }, 0);
+      // lower
+      const L2 = L * 0.82;
+      rod(b, jawM, [x, 0, s * z * 0.9], [x - L2 * 0.12, L2 * 0.6, s * z * 0.88],
+        cell * 0.54, bone(), { tint: 1.04 }, 0);
+      rod(b, jawM, [x - L2 * 0.12, L2 * 0.6, s * z * 0.88],
+        [x - L2 * 0.24, L2, s * z * 0.86], cell * 0.3, bone(), { tint: 1.06 }, 0);
+    }
+  }
+  b.setTransform(null);
+  return { length: (T.cols - 1) * cell, height: 14.1 * cell };
+}
+
 /** The star of the dig: a huge half-buried fossil beast. */
 function fossilBeast(b, rnd, cx, cz, yaw) {
   const base = frame(cx, CFG.pit.floor + 0.95, cz, yaw, 1.4);
@@ -354,34 +504,18 @@ function fossilBeast(b, rnd, cx, cz, yaw) {
     }
   }
 
-  // --- skull, reared up at the head of the spine ---------------------------
+  // --- neck and skull ------------------------------------------------------
   const [hx, hy, hz] = pts[N - 1];
-  const sx = hx + 1.2, sy = hy + 0.5, sz = hz;
-  seg([hx, hy, hz], [sx - 0.55, sy - 0.1, sz], 0.44, 0.98);       // neck
-  blk(sx - 0.1, sy + 0.06, sz, 1.25, 0.62, 1.0);                  // braincase
-  blk(sx - 0.2, sy + 0.52, sz, 1.0, 0.36, 0.82);                  // skull roof
-  blk(sx + 0.52, sy + 0.2, sz, 0.85, 0.52, 0.86);                 // brow ridge
-  blk(sx + 1.08, sy + 0.02, sz, 0.78, 0.44, 0.64);                // snout
-  blk(sx + 1.6, sy - 0.06, sz, 0.48, 0.34, 0.48);
-  blk(sx + 1.94, sy - 0.1, sz, 0.28, 0.24, 0.34);                 // nostril tip
-  for (const s of [-1, 1]) {
-    blk(sx + 0.5, sy + 0.24, sz + s * 0.44, 0.4, 0.4, 0.16, 0x24272f);   // eye socket
-    seg([sx + 0.05, sy + 0.02, sz + s * 0.5],
-        [sx + 0.95, sy - 0.12, sz + s * 0.36], 0.17, 0.98);              // cheek arch
-    seg([sx - 0.62, sy - 0.3, sz + s * 0.42],
-        [sx + 1.45, sy - 0.44, sz + s * 0.26], 0.22, 0.97);              // lower jaw
-    seg([sx + 1.45, sy - 0.44, sz + s * 0.26],
-        [sx + 1.85, sy - 0.34, sz], 0.18, 0.97);                         // jaw tip
-    seg([sx - 0.3, sy + 0.72, sz + s * 0.3],
-        [sx - 0.9, sy + 1.35, sz + s * 0.46], 0.24, 0.97);               // horns
+  const neck = [
+    [hx, hy, hz],
+    [hx + 0.42, hy + 0.28, hz - 0.05],
+    [hx + 0.78, hy + 0.62, hz - 0.08],
+    [hx + 1.02, hy + 0.92, hz - 0.1],
+  ];
+  for (let i = 0; i < neck.length - 1; i++) {
+    seg(neck[i], neck[i + 1], lerp(0.5, 0.36, i / 2), 0.98, -0.04);
   }
-  for (let i = 0; i < 6; i++) {                                   // teeth
-    const tx = sx + 0.35 + i * 0.28;
-    const tz = 0.46 - i * 0.035;
-    for (const s of [-1, 1]) {
-      seg([tx, sy - 0.16, sz + s * tz], [tx, sy - 0.42, sz + s * tz], 0.13 - i * 0.008, 1, 0);
-    }
-  }
+  trexSkull(b, base, neck[3][0] + 0.06, neck[3][1] + 0.02, neck[3][2], 0.22, rnd, 0.16);
 
   // --- limbs, half sunk in the clay ---------------------------------------
   for (const s of [-1, 1]) {

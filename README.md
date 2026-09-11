@@ -8,6 +8,8 @@ Three.js のみ（ローカル同梱）で動作し、**実行時のアセット
 
 <p align="center"><img src="docs/screenshot-wide.jpg" width="620" alt="島の全景"></p>
 
+<p align="center"><img src="docs/skull-profile.jpg" width="620" alt="ティラノサウルス頭骨の側面プロファイル"></p>
+
 ## 動かす
 
 ES Modules を使うため、ファイル直開き（`file://`）ではなく HTTP で配信します。
@@ -40,6 +42,12 @@ python3 -m http.server 8080
 輪郭線は反転ハル（`BackSide`）方式ですが、法線ではなくボクセル生成時に書き出した
 `aExpand`（ボックス中心からの符号ベクトル）で押し出すため、箱の角に隙間が出ません。
 
+**化石** — 骨は接線方向に回した箱を細らせながら繋いだテーパーロッド。頭骨だけは別で、
+ティラノサウルスの**側面輪郭をボクセルに投影**して作っています：列ごとの背側・腹側マージン、
+楕円で開けた外鼻孔・上顎窓・前眼窩窓・眼窩（鍵穴形）・側頭窓、そして中央で膨らむ断面。
+角も鶏冠もなく、開口部の配置だけで獣脚類に見えるようにしてあります。
+プロファイルの調整用に `tools/skull-profile.html` を同梱（真横と真上からの正射影ビュー）。
+
 **ボクセル生成** — `VoxelBuilder` が箱の集合を 1 つの `BufferGeometry` にマージ。
 面ごとに焼き込んだ陰影、任意の回転行列、植生用の `aPivot`/`aSway` 属性に対応。
 静物・草木・発光物はそれぞれ 1 メッシュにバッチされ、シーン全体で
@@ -65,6 +73,7 @@ python3 -m http.server 8080
 
 ```
 index.html
+tools/skull-profile.html   頭骨プロファイル確認用ビュー
 vendor/three/        Three.js r186（同梱、CDN 不要）
 src/main.js          レンダラ・ライト・ループ・品質制御
 src/camera.js        アイソメトリック操作（回転 / ズーム / 遅延追従）
