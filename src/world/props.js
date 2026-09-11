@@ -309,31 +309,29 @@ function signpost(b, x, z, yaw) {
  * opening behind it, and a deep boxy back. No horns, no crest.
  */
 const TREX = {
-  cols: 17,
-  // side view, top row first
+  cols: 13,
+  // side view, top row first. Column 0 is the snout tip, 12 the occiput,
+  // row 0 the maxillary tooth row.
   skull: [
-    '...........###...',
-    '.........########',
-    '........##..#..##',
-    '......####..#..##',
-    '...#######..#..##',
-    '.##..#...##.#..##',
-    '##...#...########',
-    '######...####..##',
-    '######...###....#',
-    '###########......',
+    '........###..',
+    '.......#####.',
+    '.....###.#..#',
+    '...#####.#..#',
+    '.###...###..#',
+    '#..#...#####.',
+    '####...###..#',
+    '#########....',
   ],
-  // lower jaw: one row of coronoid above the tooth margin, then the dentary
+  // lower jaw: a coronoid bump above the tooth margin, then the dentary
   jaw: [
-    '............###..',
-    '.################',
-    '.########..######',
-    '.#############...',
-    '..#######........',
+    '.........##..',
+    '.############',
+    '.######..####',
+    '..######.....',
   ],
   jawTopRow: 1,          // index in `jaw` that lines up with the tooth margin
-  // half-width per column, in cells: narrow snout, broad braincase
-  wide: [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.7, 2.9, 3.2, 3.5, 3.9, 4.3, 4.7, 5.1, 5.3, 5.1, 4.6],
+  // full width per column, in cells: narrow snout, broad braincase
+  wide: [1.9, 2.0, 2.1, 2.2, 2.4, 2.6, 2.9, 3.2, 3.6, 3.9, 4.0, 3.8, 3.4],
 };
 
 /** Half-width multiplier across the skull's height: an arch, not a slab. */
@@ -389,13 +387,13 @@ export function trexSkull(b, base, ox, oy, oz, tilt, rnd, opts = {}) {
   };
   // the rugose lumps a T. rex carries on the lacrimal and postorbital
   for (const s of [-1, 1]) {
-    put(skullM, xOf(9.4), cell * 6.6, s * surfaceZ(9, 6.6), cell * 1.5, cell * 1.3, cell * 0.9, 0.95);
-    put(skullM, xOf(12.4), cell * 8.4, s * surfaceZ(12, 8.4), cell * 1.4, cell * 1.2, cell * 0.9, 0.95);
+    put(skullM, xOf(7.2), cell * 5.3, s * surfaceZ(7, 5.3), cell * 1.3, cell * 1.1, cell * 0.8, 0.95);
+    put(skullM, xOf(9.3), cell * 6.4, s * surfaceZ(9, 6.4), cell * 1.2, cell * 1.0, cell * 0.8, 0.95);
   }
-  put(skullM, xOf(16) - cell * 0.55, cell * 3.0, 0, cell * 0.9, cell * 1.1, cell * 1.1, 0.94);
+  put(skullM, xOf(12) - cell * 0.5, cell * 2.4, 0, cell * 0.8, cell * 1.0, cell * 1.0, 0.94);
 
   // --- lower jaw, hinged open at the articulation --------------------------
-  const px = xOf(15.6), py = 0;
+  const px = xOf(11.7), py = 0;
   const jawM = new THREE.Matrix4().makeTranslation(px, py - cell * 0.95, 0)
     .multiply(new THREE.Matrix4().makeRotationZ(-jawDrop))
     .multiply(new THREE.Matrix4().makeTranslation(-px, -py, 0))
@@ -413,17 +411,17 @@ export function trexSkull(b, base, ox, oy, oz, tilt, rnd, opts = {}) {
   }
 
   // --- teeth --------------------------------------------------------------
-  const toothLen = (c) => 1.0 + 1.5 * Math.exp(-Math.pow((c - 3.4) / 3.6, 2));
-  for (let c = 0.4; c < 10.4; c += 1.1) {
+  const toothLen = (c) => 0.85 + 1.15 * Math.exp(-Math.pow((c - 2.6) / 2.8, 2));
+  for (let c = 0.3; c < 8.4; c += 1.3) {
     const L = toothLen(c) * cell;
-    const z = surfaceZ(Math.min(Math.round(c), 10), 0.4) * 0.94;
+    const z = surfaceZ(Math.min(Math.round(c), 8), 0.4) * 0.94;
     const x = xOf(c);
     for (const s of [-1, 1]) {
       rod(b, skullM, [x, -cell * 0.35, s * z], [x - L * 0.3, -cell * 0.35 - L, s * z * 0.94],
-        cell * 0.72, bone(), { tint: 1.05 }, 0);
+        cell * 0.6, bone(), { tint: 1.05 }, 0);
       const L2 = L * 0.8;
       rod(b, jawM, [x, cell * 0.4, s * z * 0.92], [x - L2 * 0.24, cell * 0.4 + L2, s * z * 0.88],
-        cell * 0.62, bone(), { tint: 1.05 }, 0);
+        cell * 0.52, bone(), { tint: 1.05 }, 0);
     }
   }
   b.setTransform(null);
@@ -532,8 +530,8 @@ export function fossilBeast(b, rnd, cx, cz, yaw) {
 
   // --- skull, carried forward at the end of the neck ----------------------
   const head = spine[spine.length - 1];
-  const skullLen = 2.65;
-  trexSkull(b, base, head[0] + 0.08, head[1] - skullLen * (2.4 / 17), head[2], 0.04, rnd,
+  const skullLen = 3.1;
+  trexSkull(b, base, head[0] + 0.06, head[1] - skullLen * (2.5 / 13), head[2], 0.04, rnd,
     { len: skullLen, jawDrop: 0.13 });
   b.setTransform(null);
 }
@@ -870,7 +868,7 @@ export function buildProps(scene) {
   /* ---- the dig pit ---- */
   const pit = CFG.pit;
   claim(pit.x, pit.z, pit.r + 1.5);
-  fossilBeast(statics, rnd, pit.x - 2.2, pit.z + 0.6, 0.46);
+  fossilBeast(statics, rnd, pit.x - 2.7, pit.z + 0.8, 0.46);
   ammonite(statics, rnd, pit.x - 4.6, CFG.pit.floor + 1.6, pit.z - 3.8, 0.9, 1.0);
   ammonite(statics, rnd, pit.x + 3.6, CFG.pit.floor + 1.2, pit.z + 3.9, -1.9, 0.6);
   scaffold(statics, pit.x + 5.0, pit.z - 4.2, -0.6);
