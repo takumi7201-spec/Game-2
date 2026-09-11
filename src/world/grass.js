@@ -36,13 +36,16 @@ function bladeGeometry(w, h, segs = 3, curve = 0.16) {
 
 function scatter(rnd, count, opts) {
   const pts = [];
-  const { minR = 0, maxR = CFG.rim, kinds, clump = 0, clumpR = 0.6, jitterY = 0 } = opts;
+  const {
+    minR = 0, maxR = CFG.rim, kinds, clump = 0, clumpR = 0.6, jitterY = 0,
+    cx = 0, cz = 0,
+  } = opts;
   let guard = 0;
   while (pts.length < count && guard < count * 40) {
     guard++;
     const a = rnd() * Math.PI * 2;
     const r = Math.sqrt(lerp((minR / maxR) ** 2, 1, rnd())) * maxR;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
     if (!isLand(x, z)) continue;
     const kind = surfaceAt(x, z);
     if (kinds && !kinds.includes(kind)) continue;
@@ -100,9 +103,15 @@ export function buildMeadow(scene, quality = 1) {
     const geo = bladeGeometry(0.13, 0.62, 3, 0.14);
     const mat = toonMaterial({ vertexColors: true, side: THREE.DoubleSide });
     applyWind(mat, { height: 0.62, push: true });
-    const pts = scatter(rnd, Math.round(42000 * quality), {
-      maxR: CFG.rim, kinds: ['grass', 'path'], clump: 5, clumpR: 0.55, jitterY: -0.04,
-    });
+    const pts = [
+      ...scatter(rnd, Math.round(42000 * quality), {
+        maxR: CFG.rim, kinds: ['grass', 'path'], clump: 5, clumpR: 0.55, jitterY: -0.04,
+      }),
+      ...scatter(rnd, Math.round(11000 * quality), {
+        cx: CFG.town.x, cz: CFG.town.z, maxR: CFG.town.r,
+        kinds: ['grass'], clump: 5, clumpR: 0.55, jitterY: -0.04,
+      }),
+    ];
     const m = instanced(geo, mat, pts, rnd, {
       scale: [0.7, 1.45],
       colors: [0x6fbe45, 0x63b03d, 0x85cb56, 0x559b38, 0x92c95a],
@@ -116,9 +125,15 @@ export function buildMeadow(scene, quality = 1) {
     const geo = bladeGeometry(0.19, 0.95, 4, 0.26);
     const mat = toonMaterial({ vertexColors: true, side: THREE.DoubleSide });
     applyWind(mat, { height: 0.95, push: true });
-    const pts = scatter(rnd, Math.round(6500 * quality), {
-      maxR: CFG.rim, kinds: ['grass'], clump: 6, clumpR: 0.4, jitterY: -0.05,
-    });
+    const pts = [
+      ...scatter(rnd, Math.round(6500 * quality), {
+        maxR: CFG.rim, kinds: ['grass'], clump: 6, clumpR: 0.4, jitterY: -0.05,
+      }),
+      ...scatter(rnd, Math.round(1600 * quality), {
+        cx: CFG.town.x, cz: CFG.town.z, maxR: CFG.town.r,
+        kinds: ['grass'], clump: 6, clumpR: 0.4, jitterY: -0.05,
+      }),
+    ];
     const m = instanced(geo, mat, pts, rnd, {
       scale: [0.65, 1.15],
       colors: [0x4f9433, 0x5da53a, 0x6cae42, 0x7fae3f],
@@ -144,9 +159,15 @@ export function buildMeadow(scene, quality = 1) {
     const petalMat = toonMaterial({ vertexColors: true });
     applyWind(petalMat, { height: 0.9, push: true });
 
-    const pts = scatter(rnd, Math.round(1500 * quality), {
-      maxR: CFG.rim - 1, kinds: ['grass'], clump: 5, clumpR: 0.42, jitterY: -0.03,
-    });
+    const pts = [
+      ...scatter(rnd, Math.round(1500 * quality), {
+        maxR: CFG.rim - 1, kinds: ['grass'], clump: 5, clumpR: 0.42, jitterY: -0.03,
+      }),
+      ...scatter(rnd, Math.round(600 * quality), {
+        cx: CFG.town.x, cz: CFG.town.z, maxR: CFG.town.r - 1,
+        kinds: ['grass'], clump: 5, clumpR: 0.42, jitterY: -0.03,
+      }),
+    ];
     const stems = instanced(stemGeo, stemMat, pts, rnd, {
       scale: [0.85, 1.2], colors: [0x4f9433],
     });
@@ -171,9 +192,15 @@ export function buildMeadow(scene, quality = 1) {
     const geo = b.build();
     const mat = toonMaterial({ vertexColors: true });
     applyWind(mat, { height: 0.24, push: true });
-    const pts = scatter(rnd, Math.round(3200 * quality), {
-      maxR: CFG.rim, kinds: ['grass', 'path'], clump: 3, clumpR: 0.5,
-    });
+    const pts = [
+      ...scatter(rnd, Math.round(3200 * quality), {
+        maxR: CFG.rim, kinds: ['grass', 'path'], clump: 3, clumpR: 0.5,
+      }),
+      ...scatter(rnd, Math.round(900 * quality), {
+        cx: CFG.town.x, cz: CFG.town.z, maxR: CFG.town.r, kinds: ['grass'],
+        clump: 3, clumpR: 0.5,
+      }),
+    ];
     const m = instanced(geo, mat, pts, rnd, {
       scale: [0.7, 1.5], colors: [0x69b84a, 0x57a63c, 0x7cc457],
     });

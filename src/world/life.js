@@ -418,6 +418,27 @@ export function buildLife(scene, ctx) {
     },
   }));
 
+  /* --- steam from the cleaning workshop's chimney --- */
+  if (ctx.town) {
+    scene.add(motes({
+      count: 80, color: 0xffffff, size: 0.62, rise: 1.0, span: 5.5, wander: 0.42,
+      opacity: 0.4, seed: 44,
+      place: (v, r) => {
+        const p = ctx.town.dome.chimney;
+        v.set(p.x + (r() - 0.5) * 0.5, p.y - 0.4, p.z + (r() - 0.5) * 0.5);
+      },
+    }));
+    // sparks drifting up out of the revival chamber
+    scene.add(motes({
+      count: 60, color: 0x9ff2ff, size: 0.12, rise: 0.7, span: 4.0, wander: 0.3,
+      additive: true, twinkle: 1.0, seed: 51,
+      place: (v, r) => {
+        const p = ctx.town.dome.capsule;
+        v.set(p.x + (r() - 0.5) * 1.6, p.y - 1.2, p.z + (r() - 0.5) * 1.6);
+      },
+    }));
+  }
+
   /* --- dust hanging in the dig pit --- */
   scene.add(motes({
     count: 90, color: 0xe3cfa6, size: 0.18, rise: 0.22, span: 3.2, wander: 0.7,
@@ -478,10 +499,15 @@ export function buildLife(scene, ctx) {
   });
   const birdState = [];
   for (let i = 0; i < birdCount; i++) {
+    // a third of the flock circles over the town instead
+    const overTown = ctx.town && i % 3 === 0;
     birdState.push({
-      r: 26 + rnd() * 26, y: 16 + rnd() * 16, a: rnd() * 6.28,
+      r: overTown ? 14 + rnd() * 12 : 26 + rnd() * 26,
+      y: 14 + rnd() * 16, a: rnd() * 6.28,
       speed: (0.1 + rnd() * 0.14) * (rnd() < 0.35 ? -1 : 1), bob: rnd() * 6.28,
-      cx: (rnd() - 0.5) * 14, cz: (rnd() - 0.5) * 14, scale: 0.7 + rnd() * 0.7,
+      cx: (overTown ? CFG.town.x : 0) + (rnd() - 0.5) * 12,
+      cz: (overTown ? CFG.town.z : 0) + (rnd() - 0.5) * 12,
+      scale: 0.7 + rnd() * 0.7,
     });
   }
 

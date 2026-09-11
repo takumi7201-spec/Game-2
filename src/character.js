@@ -2,7 +2,7 @@
 import * as THREE from '../vendor/three/three.module.js';
 import { VoxelBuilder, toonMaterial, addOutline } from './lib/voxel.js';
 import { clamp, damp, lerp } from './lib/math.js';
-import { groundAt, clampToWalkable, isWalkable } from './world/terrain.js';
+import { groundAt, clampToWalkable, isWalkable, routeTo } from './world/terrain.js';
 
 const SKIN = 0xf6c9a0, SKIN_D = 0xe0aa82;
 const COAT = 0x3f7fd4, COAT_D = 0x2f63aa, TRIM = 0xffd15c;
@@ -194,7 +194,9 @@ export function createCharacter(scene) {
 
   const state = {
     pos: new THREE.Vector3(3, 0, 6.5),
-    dest: new THREE.Vector3(3, 0, 6.5),
+    dest: new THREE.Vector3(3, 0, 6.5),      // current leg target
+    path: [],                                 // remaining waypoints after it
+    leg: 0,
     vel: new THREE.Vector3(),
     yaw: 0.7,
     speed: 0,
@@ -212,13 +214,20 @@ export function createCharacter(scene) {
 
   const MAX_SPEED = 3.6;
   const tmp = new THREE.Vector3();
+  const _goal = new THREE.Vector3();
 
   function moveTo(x, z) {
     const wanted = isWalkable(x, z);
-    clampToWalkable(x, z, state.dest);
+    clampToWalkable(x, z, _goal);
+    // Walking is a straight line, so crossing to the other island has to be
+    // threaded through the ends of the causeway.
+    state.path = routeTo(state.pos.x, state.pos.z, _goal.x, _goal.z);
+    state.leg = 0;
+    const [lx, lz] = state.path[0];
+    state.dest.set(lx, groundAt(lx, lz), lz);
     state.markerBlocked = !wanted;
     marker.visible = true;
-    marker.position.set(state.dest.x, state.dest.y + 0.06, state.dest.z);
+    marker.position.set(_goal.x, _goal.y + 0.06, _goal.z);
     state.markerT = 0;
     const col = wanted ? 0xffe27a : 0xff7a6a;
     ringMat.color.setHex(col);
@@ -227,9 +236,17 @@ export function createCharacter(scene) {
 
   function update(dt, t, ctx) {
     // --- steering --------------------------------------------------------
+    const lastLeg = state.leg >= state.path.length - 1;
     tmp.set(state.dest.x - state.pos.x, 0, state.dest.z - state.pos.z);
-    const dist = tmp.length();
-    const arrive = clamp(dist / 1.4, 0, 1);
+    let dist = tmp.length();
+    if (!lastLeg && dist < 0.6) {              // round the corner, don't stop at it
+      state.leg++;
+      const [nx, nz] = state.path[state.leg];
+      state.dest.set(nx, groundAt(nx, nz), nz);
+      tmp.set(state.dest.x - state.pos.x, 0, state.dest.z - state.pos.z);
+      dist = tmp.length();
+    }
+    const arrive = lastLeg ? clamp(dist / 1.4, 0, 1) : 1;
     const want = dist > 0.08 ? MAX_SPEED * arrive : 0;
     state.speed += (want - state.speed) * damp(want > state.speed ? 6 : 9, dt);
     if (dist > 1e-4) {
@@ -313,7 +330,8 @@ export function createCharacter(scene) {
       state.markerT += dt;
       const u = state.markerT;
       const pulse = 0.55 + Math.sin(u * 5.0) * 0.2;
-      const fade = clamp(1 - (u - 1.2) / 0.6, 0, 1) * (dist > 0.35 ? 1 : clamp(1 - u, 0, 1));
+      const arrived = state.leg >= state.path.length - 1 && dist <= 0.35;
+      const fade = clamp(1 - (u - 1.2) / 0.6, 0, 1) * (arrived ? clamp(1 - u, 0, 1) : 1);
       const grow = 1 + Math.max(0, 0.6 - u) * 1.2;
       ring.scale.setScalar(grow * (0.9 + Math.sin(u * 4) * 0.05));
       ringMat.opacity = fade * pulse;

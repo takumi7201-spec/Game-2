@@ -226,6 +226,9 @@ function titanSkull(b, rnd, cx, cy, cz, s) {
   }
 }
 
+const TOWN = { x: 52, z: -4, keep: 95 };
+const tooCloseToTown = (x, z) => Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.keep;
+
 export function buildDistantLands(scene) {
   const rnd = mulberry32(31415);
   const b = new VoxelBuilder();
@@ -239,12 +242,14 @@ export function buildDistantLands(scene) {
   for (let i = 0; i < 12; i++) {
     const bb = new VoxelBuilder();
     const a = (i / 12) * Math.PI * 2 + rnd() * 0.5;
-    const dist = 72 + rnd() * 70;
+    const dist = 88 + rnd() * 70;
     const radius = 3.5 + rnd() * 9;
     const y = bandY(dist) + (rnd() - 0.35) * dist * 0.45;
+    const px = Math.cos(a) * dist, pz = Math.sin(a) * dist;
+    if (tooCloseToTown(px, pz)) continue;
     floatingIsland(bb, rnd, 0, 0, 0, radius, { barren: rnd() < 0.3 });
     const mesh = new THREE.Mesh(bb.build(), toonMaterial({ vertexColors: true }));
-    mesh.position.set(Math.cos(a) * dist, y, Math.sin(a) * dist);
+    mesh.position.set(px, y, pz);
     mesh.userData = { phase: rnd() * 6.28, amp: 0.5 + rnd() * 1.1, spin: (rnd() - 0.5) * 0.02, y };
     scene.add(mesh);
     drifters.push(mesh);
@@ -253,8 +258,9 @@ export function buildDistantLands(scene) {
   // far archipelago, merged into one static mesh
   for (let i = 0; i < 44; i++) {
     const a = rnd() * Math.PI * 2;
-    const dist = 130 + Math.pow(rnd(), 0.75) * 320;
+    const dist = 140 + Math.pow(rnd(), 0.75) * 320;
     const radius = 8 + rnd() * 40;
+    if (tooCloseToTown(Math.cos(a) * dist, Math.sin(a) * dist)) continue;
     floatingIsland(b, rnd,
       Math.cos(a) * dist,
       bandY(dist) + (rnd() - 0.4) * dist * 0.5,
@@ -285,6 +291,7 @@ export function buildDistantLands(scene) {
     const mesh = new THREE.Mesh(pb.build(), toonMaterial({ vertexColors: true, fog: true }));
     const a = rnd() * Math.PI * 2;
     const dist = 78 + rnd() * 210;
+    if (tooCloseToTown(Math.cos(a) * dist, Math.sin(a) * dist)) continue;
     mesh.position.set(Math.cos(a) * dist, bandY(dist) + (rnd() - 0.3) * dist * 0.55,
       Math.sin(a) * dist);
     mesh.userData = { speed: 0.35 + rnd() * 0.5, phase: rnd() * 6.28 };

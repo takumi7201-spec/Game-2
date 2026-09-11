@@ -8,6 +8,7 @@ import { buildIsland, groundAt } from './world/terrain.js';
 import { buildMeadow } from './world/grass.js';
 import { buildWater } from './world/water.js';
 import { buildProps } from './world/props.js';
+import { buildTown } from './world/town.js';
 import { buildSky, buildDistantLands, SKY } from './world/sky.js';
 import { buildLife, moteUniforms } from './world/life.js';
 
@@ -56,10 +57,11 @@ const sun = new THREE.DirectionalLight(0xfff2d8, 3.3);
 sun.position.copy(sunDir).multiplyScalar(60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -27;
-sun.shadow.camera.right = 27;
-sun.shadow.camera.top = 27;
-sun.shadow.camera.bottom = -27;
+const SHADOW_R = 30;                     // the map follows the digger
+sun.shadow.camera.left = -SHADOW_R;
+sun.shadow.camera.right = SHADOW_R;
+sun.shadow.camera.top = SHADOW_R;
+sun.shadow.camera.bottom = -SHADOW_R;
 sun.shadow.camera.near = 6;
 sun.shadow.camera.far = 130;
 sun.shadow.bias = -0.0006;
@@ -101,12 +103,14 @@ async function build() {
   const sky = await step(8, '空をひらいています', () => buildSky(bgScene, sunDir));
   const island = await step(22, '浮遊島を積みあげています', () => buildIsland(scene));
   const water = await step(34, '池と滝を流しています', () => buildWater(scene));
-  const props = await step(52, '発掘現場をならべています', () => buildProps(scene));
+  const props = await step(46, '発掘現場をならべています', () => buildProps(scene));
+  const town = await step(60, '町をひらいています', () => buildTown(scene));
   const meadow = await step(74, '草原を生やしています', () => buildMeadow(scene, 1));
   const distant = await step(84, '遠景をひろげています', () => buildDistantLands(bgScene));
-  const life = await step(92, '生きものを放しています', () => buildLife(scene, { water, props }));
+  const life = await step(92, '生きものを放しています',
+    () => buildLife(scene, { water, props, town }));
   const hero = await step(98, '発掘家を起こしています', () => createCharacter(scene));
-  world = { sky, island, water, props, meadow, distant, life, hero };
+  world = { sky, island, water, props, town, meadow, distant, life, hero };
   window.__world = world;
   return world;
 }
@@ -173,6 +177,12 @@ window.addEventListener('resize', resize);
  *  Loop                                                               *
  * ------------------------------------------------------------------ */
 
+const SHADOW_TEXEL = (2 * SHADOW_R) / sun.shadow.mapSize.x;
+const _fromLight = new THREE.Matrix4().lookAt(
+  sunDir, new THREE.Vector3(), new THREE.Vector3(0, 1, 0));
+const _toLight = new THREE.Matrix4().copy(_fromLight).invert();
+const _ls = new THREE.Vector3();
+
 let last = performance.now();
 let elapsed = 0;
 let frames = 0;
@@ -199,6 +209,17 @@ function frame() {
     windUniforms.uWind.value.z = 0.75 + fbm2(t * 0.09, 4.2, 3) * 0.85;
 
     world.props.update(dt, t);
+    world.town.update(dt, t);
+
+    // keep the shadow map centred on the digger, snapped to its own texel grid
+    // so the edges do not crawl while walking
+    _ls.set(hero.state.pos.x, 0, hero.state.pos.z).applyMatrix4(_toLight);
+    _ls.x = Math.round(_ls.x / SHADOW_TEXEL) * SHADOW_TEXEL;
+    _ls.y = Math.round(_ls.y / SHADOW_TEXEL) * SHADOW_TEXEL;
+    _ls.applyMatrix4(_fromLight);
+    sun.target.position.copy(_ls);
+    sun.target.updateMatrixWorld();
+    sun.position.copy(_ls).addScaledVector(sunDir, 60);
     world.life.update(dt, t);
     world.distant.update(dt, t);
 
